@@ -27,7 +27,8 @@ jobs:
 
       - name: Fetch and merge traffic stats
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # /traffic/* requires a PAT — GITHUB_TOKEN is rejected even with administration:read
+          GITHUB_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
         run: python scripts/collect_traffic.py
 
       - name: Commit updated history
