@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: write
-  # Required for /repos/{owner}/{repo}/traffic/* endpoints
-  administration: read
 
 concurrency:
   group: traffic-archive
