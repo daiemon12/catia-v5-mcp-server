@@ -158,7 +158,7 @@ class WheelTools:
             report["phases"].append({"name": "parameters", "status": "complete"})
             features = self._build_geometry(values, report)
             report["features"] = features
-            part_path, step_path = self._save_and_export(values)
+            part_path, step_path = self._save_and_export(values, report)
             report["catpart_path"] = part_path
             report["step_path"] = step_path
             report["measurements"] = self._measure(values["material_density"])
@@ -272,7 +272,9 @@ class WheelTools:
         )
         return names
 
-    def _save_and_export(self, values: dict[str, Any]) -> tuple[str | None, str | None]:
+    def _save_and_export(
+        self, values: dict[str, Any], report: dict[str, Any]
+    ) -> tuple[str | None, str | None]:
         output = values.get("output_path")
         if not output:
             return None, None
@@ -282,8 +284,18 @@ class WheelTools:
         self.conn.active_document.SaveAs(part_path)
         step_path = None
         if values.get("export_step", True):
-            step_path = root + ".stp"
-            self.conn.active_document.ExportData(step_path, "stp")
+            # STEP export can fail independently of the CATPart save - commonly
+            # because the CATIA seat lacks an interoperability/STEP license.
+            # The built and saved solid is the valuable result; a missing
+            # export format must not discard it.
+            try:
+                candidate = root + ".stp"
+                self.conn.active_document.ExportData(candidate, "stp")
+                step_path = candidate
+            except Exception as exc:
+                report["warnings"].append(
+                    f"STEP export failed (CATPart was saved successfully): {exc}"
+                )
         return part_path, step_path
 
     def _measure(self, density: float) -> dict[str, Any]:
