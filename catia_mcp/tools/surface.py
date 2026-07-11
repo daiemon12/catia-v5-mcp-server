@@ -16,6 +16,21 @@ class SurfaceTools:
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         common = {"name": {"type": "string"}, "geoset": {"type": "string"}}
         refs = {"type": "array", "items": REF_SCHEMA, "minItems": 1}
+        direction_schema = {
+            "oneOf": [
+                {"type": "string", "enum": ["xy", "yz", "zx"]},
+                {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "z": {"type": "number"},
+                    },
+                    "required": ["x", "y", "z"],
+                    "additionalProperties": False,
+                },
+            ]
+        }
         return [
             self._d(
                 "catia_extrude_surface",
@@ -23,7 +38,7 @@ class SurfaceTools:
                 {
                     **common,
                     "profile": REF_SCHEMA,
-                    "direction": REF_SCHEMA,
+                    "direction": direction_schema,
                     "limit1": {"type": "number"},
                     "limit2": {"type": "number", "default": 0},
                 },
@@ -172,7 +187,10 @@ class SurfaceTools:
         r = self.geo.resolve
         if tool_name == "catia_extrude_surface":
             shape = hsf.AddNewExtrude(
-                r(args["profile"]), args["limit1"], args.get("limit2", 0), r(args["direction"])
+                r(args["profile"]),
+                args["limit1"],
+                args.get("limit2", 0),
+                self.geo.direction(args["direction"]),
             )
         elif tool_name == "catia_revolve_surface":
             shape = hsf.AddNewRevol(
