@@ -201,37 +201,35 @@ DEPLOYMENT.md for how to query the live server).
    is straightforward once the loft path is verified — it's a matter of generating
    different guide-curve geometry, not new CATIA API surface.
 
-8. **End-to-end wheel build — first solid built and saved live.** Sequence of live
-   attempts against a real 400mm/5×114.3 wheel spec, each fixing the failure the
-   previous one surfaced (see items 3–4, 9): (1) `Part.Name` read-only → fixed; (2)
-   hub/spoke self-intersection → fixed; (3) **all five build phases succeeded live**
-   (document, parameters, rim, hub_and_spokes, mounting_features) and (4)
-   **`SaveAs` succeeded — a real CATPart exists on disk**
-   (`C:\catia-mcp-setup\output\SmokeWheel4.CATPart` on the deployment box) — then (5)
-   STEP export and (6) measurement both failed on `SPAWorkbench`/`GetWorkbench`-related
-   calls (see item 9) and were made non-fatal so they warn instead of discarding the
-   built/saved solid. **Not yet re-verified after the measurement fix** — next redeploy
-   should produce a clean `"status": "complete"`. The remaining open question is item 9,
-   not the wheel geometry itself, which is now proven.
+8. **End-to-end wheel build — DONE. First wheel solid built and saved live,
+   `"status": "complete"`.** Sequence of live attempts against a real 400mm/5×114.3
+   wheel spec, each fixing the failure the previous one surfaced: (1) `Part.Name`
+   read-only → fixed; (2) hub/spoke self-intersection → fixed; (3) all five build
+   phases succeeded (document, parameters, rim, hub_and_spokes, mounting_features);
+   (4) `SaveAs` succeeded — a real CATPart on disk
+   (`C:\catia-mcp-setup\output\SmokeWheel5.CATPart`); (5) STEP export and (6)
+   measurement failed on the `GetWorkbench` bug (item 9) and were made non-fatal;
+   (7) full run confirmed `"status": "complete"` with `catpart_path` populated.
+   STEP export and mass/volume measurement still don't work
+   (STEP: likely a missing interoperability license, not a code bug, still failing
+   after the GetWorkbench fix since it's an unrelated ExportData failure; measurement:
+   should now work post-item-9-fix, not yet reconfirmed). **The wheel geometry itself
+   — rim, hub, spokes, bore, lug holes, parametrically driven — is proven working.**
+   Remaining before this is a complete pipeline: confirm measurement now succeeds,
+   decide whether STEP export matters enough to chase (may just need a license), and
+   move on to styling (fillets/draft, currently explicitly out of scope per the
+   tool's own warnings) and the loft-based spoke styles (item 7).
 
-9. **`self.conn.app.GetWorkbench("SPAWorkbench")` may not resolve on this CATIA
-   install/binding — affects more than just the wheel tool.** `wheel.py`'s `_measure()`
-   failed with a terse, no-COM-tuple error (`CATIA.Application.GetWorkbench`) — the same
-   *shape* of error as the `<unknown>.ShapeFactory` bug (item 2): a pywin32
-   dynamic-dispatch "member not found," not a runtime COM failure inside a resolved
-   call. Unlike `ShapeFactory`, I have **not** root-caused or fixed this one — only
-   made its failure non-fatal so it can't discard a successfully built/saved solid.
-   **This exact call pattern (`self.conn.app.GetWorkbench("SPAWorkbench")`) also
-   appears in `measurement.py` (3 tools: distance/inertia/bounding-box — all
-   pre-existing, pre-GSD, never live-tested before this session) and in
-   `_geometry.py`'s `_choose_subelement()`**, the geometric-query selection path item 5
-   flagged as promising. If this is a real, general problem (not something specific to
-   the object/state at the point `_measure()` calls it), it would mean **the
-   measurement tools and the geometric-query selection feature are both currently
-   broken**, not just the wheel's bonus reporting. Needs a dedicated live test:
-   call `catia_get_inertia` or `catia_get_bounding_box` directly (existing, unmodified
-   tools) on a simple solid and see whether they hit the identical error — that isolates
-   whether this is a `wheel.py`-specific state issue or a base-server-wide one.
+9. **Fixed: `GetWorkbench` belongs on `Document`, not `Application`.** Same class of
+   mistake as item 2 (`body.ShapeFactory` vs `part.ShapeFactory`). Isolation test
+   confirmed it was general, not wheel-specific: `catia_get_inertia` (an original,
+   unmodified, pre-GSD tool) threw the identical `CATIA.Application.GetWorkbench`
+   error when called directly. Fixed all 5 call sites — `measurement.py` (3),
+   `_geometry.py`'s `_choose_subelement()` (1), `wheel.py`'s `_measure()` (1) — from
+   `self.conn.app.GetWorkbench(...)` to `self.conn.active_document.GetWorkbench(...)`.
+   **Not yet re-verified live.** If this holds, it resolves the last known issue in
+   the measurement tools and unblocks live-testing the geometric-query selection path
+   (item 5).
 
 ## Risks
 

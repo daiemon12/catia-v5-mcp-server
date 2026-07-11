@@ -90,7 +90,7 @@ class GeometryContext:
         point = spec.get("nearest_point")
         normal = spec.get("normal")
         if point or normal:
-            spa = self.conn.app.GetWorkbench("SPAWorkbench")
+            spa = self.conn.active_document.GetWorkbench("SPAWorkbench")
             scored: list[tuple[float, dict[str, Any]]] = []
             for match in matches:
                 try:

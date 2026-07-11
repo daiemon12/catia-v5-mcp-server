@@ -307,7 +307,7 @@ class WheelTools:
     def _measure(self, density: float) -> dict[str, Any]:
         part = self.conn.get_active_part()
         ref = part.CreateReferenceFromObject(self.conn.get_active_part_body())
-        m = self.conn.app.GetWorkbench("SPAWorkbench").GetMeasurable(ref)
+        m = self.conn.active_document.GetWorkbench("SPAWorkbench").GetMeasurable(ref)
         data: dict[str, Any] = {}
         try:
             data["volume_mm3"] = m.Volume
