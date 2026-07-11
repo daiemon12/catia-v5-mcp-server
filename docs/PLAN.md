@@ -201,18 +201,37 @@ DEPLOYMENT.md for how to query the live server).
    is straightforward once the loft path is verified — it's a matter of generating
    different guide-curve geometry, not new CATIA API surface.
 
-8. **End-to-end wheel build — in progress, close to a first success.** Sequence of live
+8. **End-to-end wheel build — first solid built and saved live.** Sequence of live
    attempts against a real 400mm/5×114.3 wheel spec, each fixing the failure the
-   previous one surfaced (see items 3–4): (1) `Part.Name` read-only → fixed; (2)
-   hub/spoke self-intersection → fixed; (3) **all five build phases now succeed live**
-   (document, parameters, rim, hub_and_spokes, mounting_features — a real solid wheel
-   blank exists in CATIA) — the run then failed at `ExportData` (STEP export) *after*
-   `SaveAs` (CATPart) had already succeeded, most likely a missing STEP-interoperability
-   license on this CATIA seat rather than a code bug. Fixed by making STEP export
-   best-effort (a failed export now just warns; the saved CATPart and the report's
-   `measurements` — volume/mass/bounding box via `SPAWorkbench.GetMeasurable`, also
-   still unverified live — are preserved). **Not yet re-verified after this fix** —
-   next redeploy should produce `"status": "complete"` with a real `catpart_path`.
+   previous one surfaced (see items 3–4, 9): (1) `Part.Name` read-only → fixed; (2)
+   hub/spoke self-intersection → fixed; (3) **all five build phases succeeded live**
+   (document, parameters, rim, hub_and_spokes, mounting_features) and (4)
+   **`SaveAs` succeeded — a real CATPart exists on disk**
+   (`C:\catia-mcp-setup\output\SmokeWheel4.CATPart` on the deployment box) — then (5)
+   STEP export and (6) measurement both failed on `SPAWorkbench`/`GetWorkbench`-related
+   calls (see item 9) and were made non-fatal so they warn instead of discarding the
+   built/saved solid. **Not yet re-verified after the measurement fix** — next redeploy
+   should produce a clean `"status": "complete"`. The remaining open question is item 9,
+   not the wheel geometry itself, which is now proven.
+
+9. **`self.conn.app.GetWorkbench("SPAWorkbench")` may not resolve on this CATIA
+   install/binding — affects more than just the wheel tool.** `wheel.py`'s `_measure()`
+   failed with a terse, no-COM-tuple error (`CATIA.Application.GetWorkbench`) — the same
+   *shape* of error as the `<unknown>.ShapeFactory` bug (item 2): a pywin32
+   dynamic-dispatch "member not found," not a runtime COM failure inside a resolved
+   call. Unlike `ShapeFactory`, I have **not** root-caused or fixed this one — only
+   made its failure non-fatal so it can't discard a successfully built/saved solid.
+   **This exact call pattern (`self.conn.app.GetWorkbench("SPAWorkbench")`) also
+   appears in `measurement.py` (3 tools: distance/inertia/bounding-box — all
+   pre-existing, pre-GSD, never live-tested before this session) and in
+   `_geometry.py`'s `_choose_subelement()`**, the geometric-query selection path item 5
+   flagged as promising. If this is a real, general problem (not something specific to
+   the object/state at the point `_measure()` calls it), it would mean **the
+   measurement tools and the geometric-query selection feature are both currently
+   broken**, not just the wheel's bonus reporting. Needs a dedicated live test:
+   call `catia_get_inertia` or `catia_get_bounding_box` directly (existing, unmodified
+   tools) on a simple solid and see whether they hit the identical error — that isolates
+   whether this is a `wheel.py`-specific state issue or a base-server-wide one.
 
 ## Risks
 
