@@ -110,23 +110,45 @@ DEPLOYMENT.md for how to query the live server).
 
 ## Open work
 
-1. **Live verification — nothing above has been run against real CATIA yet.**
-   This is the immediate next step (tracked as the "smoke test" in project history).
-   Start small: `catia_new_geoset` → `catia_point_coord` ×2 → `catia_line_pt_pt` →
-   confirm it appears in CATIA's spec tree. Then attempt one surface (`catia_extrude_surface`
-   or `catia_loft`) and one surface→solid conversion (`catia_close_surface`). Expect
-   friction — the reference code has multiple "may not work in this locale/version"
-   caveats and best-effort fallbacks (see the helix implementation for the pattern to
-   follow: try the native feature, catch, fall back to a manual construction).
+1. **Live verification — first smoke test run 2026-07-11, partial success.**
+   Ran against the real (Russian-locale) CATIA deployment (see `DEPLOYMENT.md`):
+   `catia_new_part` → `catia_new_geoset` → `catia_point_coord` ×2 → `catia_line_pt_pt`
+   **all succeeded** and produced real features in CATIA's spec tree. `catia_extrude_surface`
+   **failed** with a COM type-mismatch (`-2147352571`, decoded from Russian:
+   "Type mismatch") — **root cause and fix below, already applied**. Continue the
+   smoke test from `catia_extrude_surface` onward: `catia_loft` (the spoke-critical
+   primitive) and `catia_close_surface` (surface→solid) are still completely
+   unverified. Expect similar argument-shape issues — see the pattern below before
+   assuming a given `AddNew*` call is a straight port.
 
-2. **Robust reference selection is still the real gap.** `GeometryContext.find_object()`
-   resolves by exact `Name=` match via `Selection.Search`. This works for named
-   features but not for "the face whose normal points +Z" or "the nearest edge to this
-   point" — the kind of query that fillet/draft/blend operations need when the target
-   doesn't have (or CATIA doesn't expose) a stable name. This is the one piece the
-   reference project didn't solve either. Until it's addressed, expect wheel-building
-   to require manually naming/tracking every intermediate feature rather than querying
-   geometrically.
+   **Root cause found & fixed:** `AddNewExtrude`'s 4th parameter must be a CATIA
+   `HybridShapeDirection` object, not a `Reference`. The initial port resolved
+   `direction` through the generic `GeometryContext.resolve()` (which builds a
+   `Reference` via `CreateReferenceFromObject`) — passing a plane *reference* where
+   CATIA wants a *direction vector* throws exactly this type mismatch. Fixed by adding
+   `GeometryContext.direction()` (`_geometry.py`), which builds a proper direction via
+   `hsf.AddNewDirectionByCoord(x, y, z)` from either `"xy"/"yz"/"zx"` shorthand or an
+   explicit `{"x":, "y":, "z":}` vector, and wiring it into `catia_extrude_surface`'s
+   `direction` argument (its input schema changed accordingly — no longer accepts an
+   arbitrary reference). **This exact bug — a `Reference` passed where CATIA wants a
+   `Direction`/vector object — is a strong candidate to recur in any other tool built
+   the same way**; if `catia_sweep`, `catia_helix`, or similar throw a type-mismatch
+   COM error, check for this pattern first before assuming something more exotic.
+   `catia_revolve_surface`'s `axis` argument was checked and is *not* affected — a
+   revolve axis is legitimately a line `Reference` in the real API.
+
+2. **Robust reference selection is more built-out than initially assessed** — revise
+   downward as a risk. `GeometryContext.resolve()` (`_geometry.py`) already supports
+   geometric-query selection: pass `{"feature": "...", "kind": "face", "nearest_point":
+   [x,y,z]}` or `{"kind": "face", "normal": [x,y,z]}` and it scores candidate
+   sub-elements via `SPAWorkbench.GetMeasurable()` (center-of-gravity distance /
+   normal-vector dot product) rather than requiring an exact name or index. This
+   covers a meaningful chunk of what the original plan called "the one genuinely new
+   piece to build." **Still unverified against live CATIA** (only read, not executed;
+   `SPAWorkbench` availability/behavior on this CATIA release/locale is unconfirmed) —
+   prioritize testing this path specifically, e.g. resolve a fillet edge by proximity
+   instead of by index, before assuming it's solid. If it works, most of the original
+   Stage-1 concern is already resolved by existing code, not new work.
 
 3. **Design table** (`knowledge.py`) is the one Stage-6 gap — formulas exist, a
    spreadsheet-driven variant table doesn't yet.

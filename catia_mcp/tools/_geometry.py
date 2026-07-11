@@ -185,6 +185,29 @@ class GeometryContext:
             raise RuntimeError(f"CATIA failed to update feature '{name}': {exc}") from exc
         self.conn.refresh_display()
 
+    # Normals of the three origin planes, used by direction() for the
+    # "xy"/"yz"/"zx" shorthand.
+    _PLANE_NORMALS = {"xy": (0.0, 0.0, 1.0), "yz": (1.0, 0.0, 0.0), "zx": (0.0, 1.0, 0.0)}
+
+    def direction(self, spec: str | dict[str, Any]) -> Any:
+        """Build a CATIA Direction object (not a Reference) for extrude/sweep-line calls.
+
+        AddNewExtrude's direction argument must be a HybridShapeDirection, not a
+        Reference — passing a resolved plane/line Reference fails with a COM
+        type-mismatch. Accepts "xy"/"yz"/"zx" (mapped to that plane's normal) or
+        an explicit {"x":, "y":, "z":} vector.
+        """
+        if isinstance(spec, dict) and {"x", "y", "z"} <= spec.keys():
+            x, y, z = spec["x"], spec["y"], spec["z"]
+        elif isinstance(spec, str) and spec.lower() in self._PLANE_NORMALS:
+            x, y, z = self._PLANE_NORMALS[spec.lower()]
+        else:
+            raise ValueError(
+                f"direction must be one of 'xy'/'yz'/'zx' or {{'x':, 'y':, 'z':}}; "
+                f"got {spec!r}. Arbitrary reference directions are not yet supported."
+            )
+        return self.hsf.AddNewDirectionByCoord(x, y, z)
+
 
 def object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {
