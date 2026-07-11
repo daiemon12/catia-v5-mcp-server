@@ -209,7 +209,15 @@ class WheelTools:
             a = 2 * math.pi * i / v["spoke_count"]
             tangent = (-math.sin(a), math.cos(a))
             radial = (math.cos(a), math.sin(a))
-            r1, r2 = v["hub_radius"] * 0.75, v["inner_radius"] + v["rim_thickness"] / 2
+            # r1 must be >= hub_radius: the quad's near-hub corners are offset
+            # tangentially by `half` from radius r1, so their true distance from
+            # the origin is hypot(r1, half) >= r1. Using hub_radius*0.75 (the
+            # original value) put those corners well inside the hub circle,
+            # producing a self-intersecting/overlapping sketch profile that
+            # CATIA's Pad solver rejects (UpdateObject fails with a generic
+            # COM error, no useful diagnostic). Starting exactly at hub_radius
+            # keeps the spoke flush with, not inside, the hub disk.
+            r1, r2 = v["hub_radius"], v["inner_radius"] + v["rim_thickness"] / 2
             pts = [
                 (radial[0] * r1 + tangent[0] * half, radial[1] * r1 + tangent[1] * half),
                 (

@@ -155,7 +155,32 @@ DEPLOYMENT.md for how to query the live server).
    fails only on deliberately-invalid test geometry (an infinite plane isn't a closed
    volume boundary) — the `AttributeError` is gone. Both fixes hold.
 
-3. **Robust reference selection is more built-out than initially assessed** — revise
+3. **`catia_design_wheel` geometry bug: hub/spoke sketch self-intersects.** First
+   live attempt got through document/parameters/rim phases (confirming `Feature.Name`
+   *is* writable — only `Part.Name` isn't, see #4 below) then failed on the hub/spoke
+   pad's `UpdateObject` with a generic COM error. Root cause: the spoke-arm quad
+   profile used `r1 = hub_radius * 0.75` as its near-hub radius, but each corner point
+   is additionally offset tangentially by `spoke_thickness/2`, so its true distance
+   from the origin is `hypot(r1, half)` — with the `*0.75` factor this landed well
+   *inside* the hub circle (e.g. hub_radius=71.15 → corner at ~54mm), producing a
+   self-intersecting sketch profile that CATIA's Pad solver rejects outright (with no
+   useful diagnostic beyond a generic COM error — this class of failure gives no hint
+   it's a geometry problem specifically; verify by computing the actual corner
+   distances by hand, as done here, when `UpdateObject` fails on a Pad/Pocket).
+   **Fixed**: `r1 = hub_radius` (spokes now start flush with the hub's outer edge,
+   `hypot(r1, half) >= hub_radius` always holds). **Not yet re-verified live** — the
+   subsequent bore/lug pocket phase is also still completely untested.
+
+4. **`Part.Name` is read-only on this CATIA configuration; `Sketch.Name`/`Feature.Name`
+   are not.** `catia_design_wheel`'s first live attempt failed immediately on
+   `doc.Part.Name = ...`. Confirmed on retest that renaming a `Pad` feature
+   (`rim.Name = "Rim_Barrel"`) succeeds fine — this is specific to `Part`, not a
+   broader "renaming doesn't work" issue. Fixed with a best-effort `_try_rename()`
+   helper in `wheel.py`, applied to all six rename call sites there (only the `Part`
+   one actually needed it, but guarding the rest was cheap insurance against burning
+   another redeploy cycle on the same failure class).
+
+5. **Robust reference selection is more built-out than initially assessed** — revise
    downward as a risk. `GeometryContext.resolve()` (`_geometry.py`) already supports
    geometric-query selection: pass `{"feature": "...", "kind": "face", "nearest_point":
    [x,y,z]}` or `{"kind": "face", "normal": [x,y,z]}` and it scores candidate
@@ -168,17 +193,18 @@ DEPLOYMENT.md for how to query the live server).
    instead of by index, before assuming it's solid. If it works, most of the original
    Stage-1 concern is already resolved by existing code, not new work.
 
-3. **Design table** (`knowledge.py`) is the one Stage-6 gap — formulas exist, a
+6. **Design table** (`knowledge.py`) is the one Stage-6 gap — formulas exist, a
    spreadsheet-driven variant table doesn't yet.
 
-4. **Wheel spoke styles**: `catia_design_wheel`'s `spoke_style` enum currently only
+7. **Wheel spoke styles**: `catia_design_wheel`'s `spoke_style` enum currently only
    accepts `"simple_lofted"`. Expanding the family (turbine, mesh, multi-spoke twin)
    is straightforward once the loft path is verified — it's a matter of generating
    different guide-curve geometry, not new CATIA API surface.
 
-5. **End-to-end wheel build.** Once 1–2 above are solid, run `catia_design_wheel` (or
-   its constituent calls) against live CATIA, inspect the result, and iterate. This is
-   the real proof of the whole extension.
+8. **End-to-end wheel build.** Once items 1–4 above are solid, run `catia_design_wheel`
+   (or its constituent calls) against live CATIA, inspect the result, and iterate. This
+   is the real proof of the whole extension — currently in progress; see item 3 for the
+   latest blocker found and fixed.
 
 ## Risks
 
