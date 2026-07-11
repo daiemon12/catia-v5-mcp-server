@@ -9,6 +9,7 @@ import json
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.tools._geometry import byref_doubles
 
 
 class MeasurementTools:
@@ -190,12 +191,13 @@ class MeasurementTools:
             pass
 
         try:
-            cog = [0.0, 0.0, 0.0]
+            cog = byref_doubles(3)
             measurable.GetCOG(cog)
+            x, y, z = cog.value
             result["center_of_gravity_mm"] = {
-                "x": round(cog[0] * 1000, 4),
-                "y": round(cog[1] * 1000, 4),
-                "z": round(cog[2] * 1000, 4),
+                "x": round(x * 1000, 4),
+                "y": round(y * 1000, 4),
+                "z": round(z * 1000, 4),
             }
         except Exception:
             pass
@@ -208,8 +210,9 @@ class MeasurementTools:
             result["density_kg_m3"] = density
 
         try:
-            inertia = [0.0] * 9
-            measurable.GetInertia(inertia)
+            inertia_arr = byref_doubles(9)
+            measurable.GetInertia(inertia_arr)
+            inertia = inertia_arr.value
             result["inertia_matrix"] = [
                 [round(inertia[0], 4), round(inertia[1], 4), round(inertia[2], 4)],
                 [round(inertia[3], 4), round(inertia[4], 4), round(inertia[5], 4)],
@@ -229,9 +232,9 @@ class MeasurementTools:
 
         measurable = spa.GetMeasurable(ref)
 
-        bbox = [0.0] * 6  # xmin, ymin, zmin, xmax, ymax, zmax, in meters
-        measurable.GetBoundingBox(bbox)
-        bbox_mm = [v * 1000 for v in bbox]
+        bbox_arr = byref_doubles(6)  # xmin, ymin, zmin, xmax, ymax, zmax, in meters
+        measurable.GetBoundingBox(bbox_arr)
+        bbox_mm = [v * 1000 for v in bbox_arr.value]
 
         result = {
             "min": {"x": round(bbox_mm[0], 4), "y": round(bbox_mm[1], 4), "z": round(bbox_mm[2], 4)},

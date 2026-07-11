@@ -8,7 +8,7 @@ import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.tools._geometry import object_schema
+from catia_mcp.tools._geometry import byref_doubles, object_schema
 from catia_mcp.tools.knowledge import KnowledgeTools
 
 
@@ -317,9 +317,9 @@ class WheelTools:
         except Exception:
             pass
         try:
-            bbox = [0.0] * 6
-            m.GetBoundingBox(bbox)
-            data["bounding_box_mm"] = [v * 1000 for v in bbox]
+            bbox_arr = byref_doubles(6)
+            m.GetBoundingBox(bbox_arr)
+            data["bounding_box_mm"] = [v * 1000 for v in bbox_arr.value]
         except Exception:
             pass
         return data
