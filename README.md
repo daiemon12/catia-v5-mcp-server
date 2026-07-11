@@ -107,6 +107,49 @@ Make sure CATIA V5 is running before asking Claude to interact with it. The serv
 
 If CATIA V5 is not running, the server will attempt to launch it (requires CATIA to be registered as COM server: `cnext.exe /regserver`).
 
+## Remote deployment (HTTP transport)
+
+By default the server talks to Claude over **stdio**, and Claude launches it as a
+child process — so the server must run on the same machine, in the same
+interactive desktop session, as CATIA. This is a hard requirement, not a
+convenience: CATIA's COM `GetActiveObject` only sees instances registered in
+the **same Windows logon session's Running Object Table**. A process launched
+elevated, via a scheduled task, or over SSH lands in a *different* session and
+cannot find an already-running CATIA, even under the same user account.
+
+If Claude Code runs on a different machine than CATIA (e.g. connecting over a
+VPN to a CAD workstation), use the **Streamable HTTP transport** instead. The
+server still runs inside CATIA's own interactive session — non-elevated, same
+user — but Claude reaches it over the network rather than spawning it directly:
+
+```powershell
+# On the CATIA machine, in a normal (non-elevated) session:
+set CATIA_MCP_TOKEN=<a long random token>
+python -m catia_mcp --http --host <this-machine-ip> --port 8000 --allowed-host <this-machine-ip>:8000
+```
+
+Then register it from the client as an HTTP MCP server:
+
+```bash
+claude mcp add --transport http catia-v5 http://<catia-machine-ip>:8000/mcp/ \
+  --header "Authorization: Bearer <the-same-token>"
+```
+
+**Security notes** — this endpoint executes CATIA automation and file I/O, so treat it
+like any other network service:
+- `--host` defaults to `127.0.0.1`; only bind it to the actual VPN/LAN interface,
+  never `0.0.0.0`, and never expose it to the open internet.
+- Always set `CATIA_MCP_TOKEN`. Without it the server logs a warning and accepts
+  unauthenticated requests.
+- `--allowed-host` populates the Streamable HTTP DNS-rebinding guard; set it to
+  the exact `host:port` clients will use in their `Host` header.
+- Firewall the port to the specific client IP(s) that need it
+  (`New-NetFirewallRule ... -RemoteAddress <client-ip>`), not the whole subnet.
+- If CATIA is on a network with no internet access, `mcp`/`pywin32`/`pycatia`
+  can be installed offline via `pip install --no-index --find-links <wheels-dir> ...`
+  after downloading the wheels on a connected machine
+  (`pip download ... --platform win_amd64 --python-version <ver> --only-binary=:all:`).
+
 ## Usage Examples
 
 Once configured, just talk to Claude:
@@ -132,17 +175,25 @@ Once configured, just talk to Claude:
 catia-v5-mcp-server/
 ├── catia_mcp/
 │   ├── __init__.py
-│   ├── __main__.py          # python -m catia_mcp entry point
-│   ├── server.py            # MCP Server — tool registration & routing
-│   ├── connection.py        # COM connection manager (win32com)
+│   ├── __main__.py               # python -m catia_mcp entry point
+│   ├── server.py                 # MCP Server — tool registration, routing, stdio/HTTP transports
+│   ├── connection.py             # COM connection manager (win32com + pycatia)
 │   └── tools/
 │       ├── __init__.py
-│       ├── document.py      # Document management (9 tools)
-│       ├── sketcher.py      # 2D Sketch tools (11 tools)
-│       ├── part_design.py   # 3D Part Design features (15 tools)
-│       ├── assembly.py      # Assembly/Product tools (9 tools)
-│       ├── measurement.py   # Measurement & analysis (6 tools)
-│       └── export.py        # Export & view control (4 tools)
+│       ├── document.py           # Document management (9 tools)
+│       ├── sketcher.py           # 2D Sketch tools (11 tools)
+│       ├── part_design.py        # 3D Part Design features (15 tools)
+│       ├── part_design_advanced.py  # Surface-to-solid, advanced fillets
+│       ├── assembly.py           # Assembly/Product tools (9 tools)
+│       ├── measurement.py        # Measurement & analysis (6 tools)
+│       ├── export.py             # Export & view control (4 tools)
+│       ├── geoset.py             # Geometrical sets & stable reference resolution
+│       ├── wireframe.py          # 3D wireframe (points, lines, splines, helix)
+│       ├── surface.py            # GSD surfaces (loft, sweep, blend, fill, join)
+│       ├── knowledge.py          # Parameters & formulas
+│       ├── wheel.py              # Parametric wheel composite tool
+│       └── _geometry.py          # Shared geometry helpers
+├── tests/
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -150,25 +201,36 @@ catia-v5-mcp-server/
 
 ### How it works
 
+The server supports two transports; pick based on whether Claude and CATIA run
+on the same machine.
+
+**stdio** (default — same machine as CATIA):
 ```
-Claude (Desktop/Code)
-    │
-    │ stdio (MCP JSON-RPC)
-    ▼
-catia_mcp/server.py (MCP Server)
-    │
-    │ Tool routing
-    ▼
-catia_mcp/tools/*.py (Tool modules)
-    │
-    │ win32com.client (COM Automation)
-    ▼
-CATIA V5 Application
+Claude (Desktop/Code)  ──stdio (MCP JSON-RPC)──▶  catia_mcp/server.py
+                                                        │ tool routing
+                                                        ▼
+                                                catia_mcp/tools/*.py
+                                                        │ win32com / pycatia (COM)
+                                                        ▼
+                                                  CATIA V5 Application
 ```
 
-1. Claude sends MCP tool calls over stdio
+**Streamable HTTP** (`--http` — Claude on a different machine, server stays
+inside CATIA's interactive session; see [Remote deployment](#remote-deployment-http-transport)):
+```
+Claude (Desktop/Code)  ──HTTP + Bearer token, over LAN/VPN──▶  catia_mcp/server.py (uvicorn)
+                                                                     │ tool routing
+                                                                     ▼
+                                                             catia_mcp/tools/*.py
+                                                                     │ win32com / pycatia (COM,
+                                                                     │ same logon session as CATIA)
+                                                                     ▼
+                                                               CATIA V5 Application
+```
+
+1. Claude sends MCP tool calls over stdio or HTTP
 2. The server routes each call to the appropriate tool module
-3. Each tool module uses `win32com.client` to drive CATIA V5 via COM
+3. Each tool module uses `win32com.client` or `pycatia` to drive CATIA V5 via COM
 4. Results (JSON, text) are returned to Claude
 
 ## Tool Reference
@@ -292,16 +354,21 @@ This server requires Windows. It will not work on macOS or Linux.
 Create or open a document first using `catia_new_part` or `catia_open_document`.
 
 ### COM ByRef array limitations
-Some measurement methods may not work with late binding. If you encounter issues, try using `pycatia` as an alternative backend (contribution welcome).
+Some measurement methods may not work with late binding. The GSD and advanced Part Design tools use `pycatia` (early-binding) internally for this reason; if a raw `win32com` call fails with a ByRef/array error, check whether a `pycatia`-backed equivalent exists first.
+
+### HTTP transport: "Unauthorized" or connection refused
+See [Remote deployment](#remote-deployment-http-transport) — check `CATIA_MCP_TOKEN` matches on both ends, that `--allowed-host` matches the `Host` header the client sends, and that the firewall rule permits the client's IP.
 
 ## Contributing
 
 This project is open-source. Contributions welcome:
 
-- **Wireframe & Surface (GSD)** tools
 - **Drawing** tools (2D drafting)
-- **Knowledgeware** (formulas, rules, check)
-- **pycatia backend** as alternative to raw win32com
+- **Knowledgeware** — design tables (formulas/parameters are implemented)
+- **Robust sub-element selection** — resolving faces/edges by geometric query
+  (normal direction, proximity) rather than name/index; the current GSD tools
+  resolve references by name, which is fragile for faces/edges that don't have
+  a stable name across rebuilds
 - **Tests** with COM mocking
 - **3DEXPERIENCE** CATIA support
 
@@ -316,3 +383,10 @@ Inspired by:
 - [freecad-mcp](https://github.com/contextform/freecad-mcp)
 - [abaqus-mcp-server](https://github.com/jianzhichun/abaqus-mcp-server)
 - [pycatia](https://github.com/evereux/pycatia)
+
+The Generative Shape Design tools (`geoset.py`, `wireframe.py`, `surface.py`,
+surface-to-solid features in `part_design_advanced.py`, and the formula
+helpers in `knowledge.py`) were adapted from
+[tongriyaotxt/catia-mcp](https://github.com/tongriyaotxt/catia-mcp), which
+declares an MIT license in `pyproject.toml`/README but does not ship a
+`LICENSE` file in the repository as of this writing.
