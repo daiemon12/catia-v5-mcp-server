@@ -201,10 +201,18 @@ DEPLOYMENT.md for how to query the live server).
    is straightforward once the loft path is verified — it's a matter of generating
    different guide-curve geometry, not new CATIA API surface.
 
-8. **End-to-end wheel build.** Once items 1–4 above are solid, run `catia_design_wheel`
-   (or its constituent calls) against live CATIA, inspect the result, and iterate. This
-   is the real proof of the whole extension — currently in progress; see item 3 for the
-   latest blocker found and fixed.
+8. **End-to-end wheel build — in progress, close to a first success.** Sequence of live
+   attempts against a real 400mm/5×114.3 wheel spec, each fixing the failure the
+   previous one surfaced (see items 3–4): (1) `Part.Name` read-only → fixed; (2)
+   hub/spoke self-intersection → fixed; (3) **all five build phases now succeed live**
+   (document, parameters, rim, hub_and_spokes, mounting_features — a real solid wheel
+   blank exists in CATIA) — the run then failed at `ExportData` (STEP export) *after*
+   `SaveAs` (CATPart) had already succeeded, most likely a missing STEP-interoperability
+   license on this CATIA seat rather than a code bug. Fixed by making STEP export
+   best-effort (a failed export now just warns; the saved CATPart and the report's
+   `measurements` — volume/mass/bounding box via `SPAWorkbench.GetMeasurable`, also
+   still unverified live — are preserved). **Not yet re-verified after this fix** —
+   next redeploy should produce `"status": "complete"` with a real `catpart_path`.
 
 ## Risks
 
