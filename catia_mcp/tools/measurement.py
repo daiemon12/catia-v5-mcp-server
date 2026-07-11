@@ -134,7 +134,7 @@ class MeasurementTools:
     def _measure_distance(self, elem1_name: str, elem2_name: str) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
-        spa = self.conn.app.GetWorkbench("SPAWorkbench")
+        spa = self.conn.active_document.GetWorkbench("SPAWorkbench")
 
         # Create references from names
         sel = self.conn.hso
@@ -161,7 +161,7 @@ class MeasurementTools:
 
     def _get_inertia(self, density: float | None = None) -> str:
         self.conn.ensure_connected()
-        spa = self.conn.app.GetWorkbench("SPAWorkbench")
+        spa = self.conn.active_document.GetWorkbench("SPAWorkbench")
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
         ref = part.CreateReferenceFromObject(body)
@@ -215,7 +215,7 @@ class MeasurementTools:
 
     def _get_bounding_box(self) -> str:
         self.conn.ensure_connected()
-        spa = self.conn.app.GetWorkbench("SPAWorkbench")
+        spa = self.conn.active_document.GetWorkbench("SPAWorkbench")
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
         ref = part.CreateReferenceFromObject(body)
