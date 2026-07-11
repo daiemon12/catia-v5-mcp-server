@@ -310,14 +310,16 @@ class WheelTools:
         m = self.conn.active_document.GetWorkbench("SPAWorkbench").GetMeasurable(ref)
         data: dict[str, Any] = {}
         try:
-            data["volume_mm3"] = m.Volume
-            data["mass_kg"] = m.Volume * 1e-9 * density
+            # Measurable returns Volume in m3 (CATIA's base SI unit), not mm3.
+            volume_m3 = m.Volume
+            data["volume_mm3"] = volume_m3 * 1e9
+            data["mass_kg"] = volume_m3 * density  # density is kg/m3
         except Exception:
             pass
         try:
             bbox = [0.0] * 6
             m.GetBoundingBox(bbox)
-            data["bounding_box_mm"] = bbox
+            data["bounding_box_mm"] = [v * 1000 for v in bbox]
         except Exception:
             pass
         return data
