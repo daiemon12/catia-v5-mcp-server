@@ -6,6 +6,9 @@ import json
 import math
 from typing import Any
 
+import pythoncom
+from win32com.client import VARIANT
+
 from catia_mcp.connection import CATIAConnection
 
 
@@ -16,6 +19,20 @@ def raw(value: Any) -> Any:
 
 def result(**values: Any) -> str:
     return json.dumps(values, indent=2, ensure_ascii=False)
+
+
+def byref_doubles(n: int) -> VARIANT:
+    """A ByRef SAFEARRAY of n doubles for CATIA methods that fill an array
+    argument (GetBoundingBox, GetCOG, GetPlane, GetInertia).
+
+    Plain Python lists do not marshal correctly as output parameters under
+    win32com late binding — CATIA never writes into them, so the call
+    silently returns zeros or fails outright (seen as a bare
+    "GetMeasurable.GetBoundingBox" AttributeError-style error with no COM
+    HRESULT). Passing an explicit VT_BYREF|VT_ARRAY|VT_R8 VARIANT fixes this.
+    Read the result back from the VARIANT's `.value` after the call.
+    """
+    return VARIANT(pythoncom.VT_BYREF | pythoncom.VT_ARRAY | pythoncom.VT_R8, [0.0] * n)
 
 
 def ref_handle(name: str, kind: str = "feature", brep_name: str | None = None) -> dict[str, Any]:
@@ -97,13 +114,17 @@ class GeometryContext:
                     measure = spa.GetMeasurable(match["reference"])
                     score = 0.0
                     if point:
-                        center = [0.0, 0.0, 0.0]
-                        measure.GetCOG(center)
-                        score += math.dist(center, point)
+                        center_arr = byref_doubles(3)
+                        measure.GetCOG(center_arr)
+                        # GetCOG returns meters (CATIA's base unit); nearest_point
+                        # is supplied in mm like every other coordinate in this API.
+                        center_mm = [v * 1000 for v in center_arr.value]
+                        score += math.dist(center_mm, point)
                     if normal:
-                        origin = [0.0, 0.0, 0.0]
-                        direction = [0.0, 0.0, 0.0]
-                        measure.GetPlane(origin, direction)
+                        origin_arr = byref_doubles(3)
+                        direction_arr = byref_doubles(3)
+                        measure.GetPlane(origin_arr, direction_arr)
+                        direction = direction_arr.value
                         length = math.sqrt(sum(v * v for v in direction)) or 1.0
                         target_len = math.sqrt(sum(v * v for v in normal)) or 1.0
                         dot = sum(a * b for a, b in zip(direction, normal)) / (length * target_len)
