@@ -242,8 +242,25 @@ DEPLOYMENT.md for how to query the live server).
     (`_measure_distance`, `_get_inertia`'s volume/area/COG, `_get_bounding_box`,
     `wheel.py`'s `_measure`) with explicit ×1000/×1e6/×1e9 conversions; verified the
     conversion round-trips correctly against hand-computed geometry before deploying.
-    **Not yet re-verified live** — next redeploy should show sane values (~1571 mm³ /
-    ~942 mm² for the same test pad).
+    **Verified live**: the same 10mm/5mm test pad now returns `volume_mm3: 1570.7963`
+    and `area_mm2: 942.4778` — matching the hand-computed expectation (1570.80 /
+    942.48) to 4 decimal places. The wheel's `measurements` are now sane too:
+    `volume_mm3: 9,689,826` (9.69 L) / `mass_kg: 26.16` — exactly matching the estimate
+    made when this bug was first found.
+
+    **New, separate issue found while verifying this fix**: `catia_get_bounding_box`
+    now fails with `GetMeasurable.GetBoundingBox` (same terse, no-COM-tuple error
+    shape as the other dynamic-dispatch bugs, but this one is likely a different root
+    cause). `GetBoundingBox(bbox)` takes its result via a mutated ByRef array
+    argument — exactly the failure category the README's own Troubleshooting section
+    already names ("COM ByRef array limitations... may not work with late binding").
+    Unlike items 2/9, **not fixed** — this needs either a different array-marshaling
+    approach (e.g. a `pywintypes`/`SAFEARRAY` construction instead of a plain Python
+    list) or an early-bound (`pycatia`/makepy) call instead of late-bound dynamic
+    dispatch. Not currently blocking anything: `wheel.py`'s own bounding-box call
+    already tolerates this failure via try/except (silently omits
+    `bounding_box_mm` from `measurements`); only the standalone
+    `catia_get_bounding_box` tool surfaces a raw error to callers.
 
     **Not fixed, flagged only**: `_geometry.py`'s `_choose_subelement()` also calls
     `measure.GetCOG`/`GetPlane` for `nearest_point`/`normal`-based sub-element scoring
