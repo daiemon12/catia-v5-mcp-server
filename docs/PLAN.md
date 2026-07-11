@@ -149,8 +149,11 @@ DEPLOYMENT.md for how to query the live server).
    plus the shared `CATIAConnection.shape_factory` property — i.e. most of the base
    server's advertised solid-modeling functionality had never actually been exercised
    against live CATIA before this session and was non-functional. Fixed: all sites
-   changed to `part.ShapeFactory`. **Not yet re-verified live** — `catia_pad` and
-   `catia_close_surface` both need a retest after redeploy before trusting this fix.
+   changed to `part.ShapeFactory`. **Verified live 2026-07-11 after redeploy**:
+   `catia_pad` now succeeds (produces a real feature, confirmed via `catia_list_features`);
+   `catia_close_surface` now reaches CATIA's actual solver (`AddNewCloseSurface`) and
+   fails only on deliberately-invalid test geometry (an infinite plane isn't a closed
+   volume boundary) — the `AttributeError` is gone. Both fixes hold.
 
 3. **Robust reference selection is more built-out than initially assessed** — revise
    downward as a risk. `GeometryContext.resolve()` (`_geometry.py`) already supports
