@@ -9,6 +9,12 @@ The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from 
 
 ![Repository traffic](traffic/chart.png)
 
+**GSD extension in progress:** [`docs/PLAN.md`](docs/PLAN.md) is the implementation
+plan for the Generative Shape Design (surfacing) tools, and
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the live HTTP deployment against
+a real CATIA install, including why several simpler approaches don't work. Read both
+before extending or redeploying this server.
+
 ## What it does
 
 This MCP server exposes **50+ tools** that let Claude:
