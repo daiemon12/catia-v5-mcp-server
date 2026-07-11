@@ -22,17 +22,26 @@ def result(**values: Any) -> str:
 
 
 def byref_doubles(n: int) -> VARIANT:
-    """A ByRef SAFEARRAY of n doubles for CATIA methods that fill an array
-    argument (GetBoundingBox, GetCOG, GetPlane, GetInertia).
+    """A ByRef SAFEARRAY for CATIA methods that fill an array argument
+    (GetBoundingBox, GetCOG, GetPlane, GetInertia).
 
     Plain Python lists do not marshal correctly as output parameters under
     win32com late binding — CATIA never writes into them, so the call
     silently returns zeros or fails outright (seen as a bare
     "GetMeasurable.GetBoundingBox" AttributeError-style error with no COM
-    HRESULT). Passing an explicit VT_BYREF|VT_ARRAY|VT_R8 VARIANT fixes this.
-    Read the result back from the VARIANT's `.value` after the call.
+    HRESULT).
+
+    A first attempt using a strongly-typed VT_R8 array (VT_BYREF|VT_ARRAY|
+    VT_R8) made GetBoundingBox fail identically and made GetCOG regress
+    from "runs but returns zeros" to "raises" — evidence the strong typing
+    was rejected where a loosely-typed list was at least accepted (and
+    silently ignored). CATIA's VBA-oriented Automation IDL commonly
+    declares array out-parameters as generic Variant (for VBA
+    compatibility), not double[]; VT_ARRAY|VT_VARIANT matches that and is
+    what CATIA's own type library expects. Read the result back from the
+    VARIANT's `.value` after the call.
     """
-    return VARIANT(pythoncom.VT_BYREF | pythoncom.VT_ARRAY | pythoncom.VT_R8, [0.0] * n)
+    return VARIANT(pythoncom.VT_BYREF | pythoncom.VT_ARRAY | pythoncom.VT_VARIANT, [0.0] * n)
 
 
 def ref_handle(name: str, kind: str = "feature", brep_name: str | None = None) -> dict[str, Any]:
