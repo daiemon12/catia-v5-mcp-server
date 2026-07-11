@@ -19,6 +19,12 @@ def test_imports():
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
     from catia_mcp.tools.export import ExportTools
+    from catia_mcp.tools.geoset import GeosetTools
+    from catia_mcp.tools.wireframe import WireframeTools
+    from catia_mcp.tools.surface import SurfaceTools
+    from catia_mcp.tools.part_design_advanced import AdvancedPartDesignTools
+    from catia_mcp.tools.knowledge import KnowledgeTools
+    from catia_mcp.tools.wheel import WheelTools
     print("  All modules imported successfully")
 
 
@@ -32,6 +38,12 @@ def test_tool_definitions():
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
     from catia_mcp.tools.export import ExportTools
+    from catia_mcp.tools.geoset import GeosetTools
+    from catia_mcp.tools.wireframe import WireframeTools
+    from catia_mcp.tools.surface import SurfaceTools
+    from catia_mcp.tools.part_design_advanced import AdvancedPartDesignTools
+    from catia_mcp.tools.knowledge import KnowledgeTools
+    from catia_mcp.tools.wheel import WheelTools
 
     conn = CATIAConnection()
     modules = {
@@ -41,6 +53,12 @@ def test_tool_definitions():
         "Assembly": AssemblyTools(conn),
         "Measurement": MeasurementTools(conn),
         "Export": ExportTools(conn),
+        "Geoset": GeosetTools(conn),
+        "Wireframe": WireframeTools(conn),
+        "Surface": SurfaceTools(conn),
+        "Advanced Part Design": AdvancedPartDesignTools(conn),
+        "Knowledgeware": KnowledgeTools(conn),
+        "Wheel": WheelTools(conn),
     }
 
     total_tools = 0

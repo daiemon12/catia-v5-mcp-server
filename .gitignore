@@ -8,3 +8,10 @@ build/
 .venv/
 venv/
 .env
+
+# Credentials — never commit
+*-creds
+*.creds
+
+# Local Claude Code config (machine-specific)
+.claude/
