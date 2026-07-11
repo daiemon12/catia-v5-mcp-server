@@ -161,7 +161,13 @@ class WheelTools:
             part_path, step_path = self._save_and_export(values, report)
             report["catpart_path"] = part_path
             report["step_path"] = step_path
-            report["measurements"] = self._measure(values["material_density"])
+            try:
+                # Mass/volume/bounding-box are a bonus report, not the deliverable -
+                # a built and saved solid must not be reported as "failed" just
+                # because SPAWorkbench.GetMeasurable couldn't be reached.
+                report["measurements"] = self._measure(values["material_density"])
+            except Exception as exc:
+                report["warnings"].append(f"Measurement step failed (geometry was built and saved): {exc}")
             report["status"] = "complete"
         except Exception as exc:
             report["status"] = "failed"
