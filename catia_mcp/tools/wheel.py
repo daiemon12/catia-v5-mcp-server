@@ -130,7 +130,12 @@ class WheelTools:
         try:
             self.conn.ensure_connected()
             doc = self.conn.documents.Add("Part")
-            doc.Part.Name = values.get("part_name", "MCP_Wheel")
+            try:
+                # Part.Name is read-only on some CATIA configurations (it mirrors
+                # the document name); a failed rename shouldn't abort the build.
+                doc.Part.Name = values.get("part_name", "MCP_Wheel")
+            except Exception:
+                pass
             report["phases"].append(
                 {"name": "document", "status": "complete", "feature": doc.Part.Name}
             )
@@ -164,6 +169,16 @@ class WheelTools:
             report["warnings"].append("The partial CATIA document was left open for diagnosis.")
         return json.dumps(report, indent=2, ensure_ascii=False)
 
+    @staticmethod
+    def _try_rename(obj: Any, name: str) -> None:
+        """Best-effort rename. Not all CATIA object types accept a written
+        .Name on every configuration; a failed cosmetic rename must not abort
+        the build, since nothing downstream looks features up by this name."""
+        try:
+            obj.Name = name
+        except Exception:
+            pass
+
     def _build_geometry(self, v: dict[str, Any], report: dict[str, Any]) -> list[str]:
         """Build a conservative wheel solid; each phase updates before continuing."""
         part = self.conn.get_active_part()
@@ -172,13 +187,13 @@ class WheelTools:
         names: list[str] = []
         # Rim barrel: annular pad on XY, centered across width.
         sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
-        sketch.Name = "Rim_Profile"
+        self._try_rename(sketch, "Rim_Profile")
         f = sketch.OpenEdition()
         f.CreateClosedCircle(0, 0, v["rim_diameter"] / 2)
         f.CreateClosedCircle(0, 0, v["inner_radius"])
         sketch.CloseEdition()
         rim = part.ShapeFactory.AddNewPad(sketch, v["rim_width"])
-        rim.Name = "Rim_Barrel"
+        self._try_rename(rim, "Rim_Barrel")
         rim.IsSymmetric = True
         part.UpdateObject(rim)
         names.append(rim.Name)
@@ -186,7 +201,7 @@ class WheelTools:
         # Hub disk and straight tapered spoke web are one sketch/pad; the radial sectors
         # create a robust precursor solid that later fillet/draft operations can style.
         sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
-        sketch.Name = "Hub_Spokes_Profile"
+        self._try_rename(sketch, "Hub_Spokes_Profile")
         f = sketch.OpenEdition()
         f.CreateClosedCircle(0, 0, v["hub_radius"])
         half = v["spoke_thickness"] / 2
@@ -211,7 +226,7 @@ class WheelTools:
                 f.CreateLine(*p1, *p2)
         sketch.CloseEdition()
         web = part.ShapeFactory.AddNewPad(sketch, v["hub_thickness"])
-        web.Name = "Simple_Lofted_Spoke_Web"
+        self._try_rename(web, "Simple_Lofted_Spoke_Web")
         web.IsSymmetric = True
         part.UpdateObject(web)
         names.append(web.Name)
@@ -225,7 +240,7 @@ class WheelTools:
         )
         # Bore and lug holes in one through pocket.
         sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
-        sketch.Name = "Bore_Lugs_Profile"
+        self._try_rename(sketch, "Bore_Lugs_Profile")
         f = sketch.OpenEdition()
         f.CreateClosedCircle(0, 0, v["center_bore"] / 2)
         for i in range(v["bolt_count"]):
@@ -235,7 +250,7 @@ class WheelTools:
             )
         sketch.CloseEdition()
         pocket = part.ShapeFactory.AddNewPocket(sketch, v["rim_width"] * 2)
-        pocket.Name = "Center_Bore_And_Lugs"
+        self._try_rename(pocket, "Center_Bore_And_Lugs")
         pocket.IsSymmetric = True
         part.UpdateObject(pocket)
         names.append(pocket.Name)
