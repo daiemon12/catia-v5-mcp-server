@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "catia-v5-mcp-server"
@@ -17,6 +17,7 @@ keywords = ["catia", "catia-v5", "mcp", "claude", "dassault-systemes", "cao", "c
 dependencies = [
     "mcp>=1.0.0",
     "pywin32>=306",
+    "pycatia>=0.8.1",
 ]
 
 [project.optional-dependencies]

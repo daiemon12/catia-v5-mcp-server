@@ -19,12 +19,17 @@ This MCP server exposes **50+ tools** that let Claude:
 - **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
+- **Generative Shape Design** — geometrical sets, stable references, 3D wireframe,
+  lofts, sweeps, blends, joins, trims, offsets, and surface-to-solid conversion
+- **Parametric wheels** — validated cast-style wheel blanks driven by named
+  dimensions and exported to CATPart/STEP for downstream engineering
 - **View control** — set standard views, fit all, capture screenshots
 
 ## Requirements
 
 - **Windows** (COM automation is Windows-only)
 - **CATIA V5** installed and licensed (R2016+)
+- **CATIA Part Design and Generative Shape Design licenses** for advanced and wheel tools
 - **Python 3.10+**
 - **Claude Desktop** or **Claude Code**
 
@@ -55,7 +60,7 @@ pip install -e .
 
 Or manually:
 ```bash
-pip install mcp pywin32
+pip install mcp pywin32 pycatia
 ```
 
 ### 3. Configure Claude Desktop
@@ -245,6 +250,30 @@ CATIA V5 Application
 | `catia_screenshot` | Capture 3D view to image |
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
+
+## Generative Shape Design and wheels
+
+The GSD extension adds geometrical-set and stable-reference tools, 3D wireframe
+construction, surface loft/sweep/blend/join operations, surface-to-solid
+features, advanced casting fillets/draft, and Knowledgeware parameters. Use
+`catia_design_wheel` for the validated `simple_lofted` wheel family.
+
+Geometry-producing tools return a reusable reference handle such as:
+
+```json
+{"name": "SpokeGuide.1", "kind": "feature"}
+```
+
+Face, edge, and vertex handles can additionally contain a persistent CATIA
+`brep_name`. Pass these handles directly to later GSD tools instead of relying
+on the current selection or an unstable topology index.
+
+The wheel tool produces a parametric, rebuildable wheel blank and CATPart/STEP
+outputs for downstream engineering. It does **not** provide Class-A styling,
+GD&T, DFM approval, FEA, fatigue/impact certification, or regulatory approval.
+Final valve drilling, back-cavity optimization, surface crowns, drafts, and
+fillet topology must be qualified in the target CATIA release before release to
+manufacturing.
 
 ## Troubleshooting
 
