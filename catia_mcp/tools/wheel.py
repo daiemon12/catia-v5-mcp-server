@@ -317,9 +317,11 @@ class WheelTools:
         except Exception:
             pass
         try:
-            bbox_arr = byref_doubles(6)
-            m.GetBoundingBox(bbox_arr)
-            data["bounding_box_mm"] = [v * 1000 for v in bbox_arr.value]
+            # See measurement.py's _get_bounding_box for why this is two
+            # separate 3-element arrays, not one 6-element array.
+            omin, omax = byref_doubles(3), byref_doubles(3)
+            m.GetBoundingBox(omin, omax)
+            data["bounding_box_mm"] = [v * 1000 for v in (*omin.value, *omax.value)]
         except Exception:
             pass
         return data

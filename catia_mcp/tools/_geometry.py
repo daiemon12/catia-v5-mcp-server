@@ -123,17 +123,19 @@ class GeometryContext:
                     measure = spa.GetMeasurable(match["reference"])
                     score = 0.0
                     if point:
-                        center_arr = byref_doubles(3)
-                        measure.GetCOG(center_arr)
+                        # A VARIANT-wrapped array made GetCOG raise where a
+                        # plain list at least didn't error - reverted pending
+                        # a proper fix. See docs/PLAN.md for the ByRef findings.
+                        center = [0.0, 0.0, 0.0]
+                        measure.GetCOG(center)
                         # GetCOG returns meters (CATIA's base unit); nearest_point
                         # is supplied in mm like every other coordinate in this API.
-                        center_mm = [v * 1000 for v in center_arr.value]
+                        center_mm = [v * 1000 for v in center]
                         score += math.dist(center_mm, point)
                     if normal:
-                        origin_arr = byref_doubles(3)
-                        direction_arr = byref_doubles(3)
-                        measure.GetPlane(origin_arr, direction_arr)
-                        direction = direction_arr.value
+                        origin = [0.0, 0.0, 0.0]
+                        direction = [0.0, 0.0, 0.0]
+                        measure.GetPlane(origin, direction)
                         length = math.sqrt(sum(v * v for v in direction)) or 1.0
                         target_len = math.sqrt(sum(v * v for v in normal)) or 1.0
                         dot = sum(a * b for a, b in zip(direction, normal)) / (length * target_len)

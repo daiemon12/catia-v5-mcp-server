@@ -191,13 +191,15 @@ class MeasurementTools:
             pass
 
         try:
-            cog = byref_doubles(3)
+            # A VARIANT-wrapped array (VT_R8 and VT_VARIANT both tried) made
+            # this raise where a plain list at least didn't error - reverted
+            # pending a proper fix. See docs/PLAN.md for the ByRef findings.
+            cog = [0.0, 0.0, 0.0]
             measurable.GetCOG(cog)
-            x, y, z = cog.value
             result["center_of_gravity_mm"] = {
-                "x": round(x * 1000, 4),
-                "y": round(y * 1000, 4),
-                "z": round(z * 1000, 4),
+                "x": round(cog[0] * 1000, 4),
+                "y": round(cog[1] * 1000, 4),
+                "z": round(cog[2] * 1000, 4),
             }
         except Exception:
             pass
@@ -210,9 +212,8 @@ class MeasurementTools:
             result["density_kg_m3"] = density
 
         try:
-            inertia_arr = byref_doubles(9)
-            measurable.GetInertia(inertia_arr)
-            inertia = inertia_arr.value
+            inertia = [0.0] * 9
+            measurable.GetInertia(inertia)
             result["inertia_matrix"] = [
                 [round(inertia[0], 4), round(inertia[1], 4), round(inertia[2], 4)],
                 [round(inertia[3], 4), round(inertia[4], 4), round(inertia[5], 4)],
@@ -232,9 +233,15 @@ class MeasurementTools:
 
         measurable = spa.GetMeasurable(ref)
 
-        bbox_arr = byref_doubles(6)  # xmin, ymin, zmin, xmax, ymax, zmax, in meters
-        measurable.GetBoundingBox(bbox_arr)
-        bbox_mm = [v * 1000 for v in bbox_arr.value]
+        # Two attempts at a single 6-element ByRef array (VT_R8, then
+        # VT_VARIANT) both failed identically ("GetMeasurable.GetBoundingBox",
+        # no COM error tuple) - a signature-independent failure suggests the
+        # problem was never argument type, but argument count: CATIA's VBA-era
+        # Automation IDL commonly declares GetBoundingBox(oMin, oMax) as two
+        # separate 3-element out-params, not one combined 6-element array.
+        omin, omax = byref_doubles(3), byref_doubles(3)
+        measurable.GetBoundingBox(omin, omax)
+        bbox_mm = [v * 1000 for v in (*omin.value, *omax.value)]
 
         result = {
             "min": {"x": round(bbox_mm[0], 4), "y": round(bbox_mm[1], 4), "z": round(bbox_mm[2], 4)},
