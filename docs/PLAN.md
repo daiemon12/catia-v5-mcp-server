@@ -137,7 +137,22 @@ DEPLOYMENT.md for how to query the live server).
    `catia_revolve_surface`'s `axis` argument was checked and is *not* affected — a
    revolve axis is legitimately a line `Reference` in the real API.
 
-2. **Robust reference selection is more built-out than initially assessed** — revise
+2. **Base-server bug found via the smoke test, not GSD-specific: `body.ShapeFactory` is
+   wrong.** After the extrude fix, `catia_close_surface` failed with `<unknown>.ShapeFactory`
+   — a pywin32 dynamic-dispatch AttributeError, not a COM call error. Isolated by
+   testing `catia_pad` (an original, pre-GSD tool, never previously smoke-tested) in
+   the same session: **identical failure**. `ShapeFactory` is a property of `Part`, not
+   `Body` — `Body` only exposes `Shapes`/`Sketches` (which is why `catia_list_features`,
+   using `body.Shapes`, worked fine on the same object). This affected **13 call sites
+   in `part_design.py`** (every solid feature: pad, pocket, shaft, groove, fillet,
+   chamfer, hole, patterns, mirror, shell, draft, thickness) **plus 3 in `wheel.py`**
+   plus the shared `CATIAConnection.shape_factory` property — i.e. most of the base
+   server's advertised solid-modeling functionality had never actually been exercised
+   against live CATIA before this session and was non-functional. Fixed: all sites
+   changed to `part.ShapeFactory`. **Not yet re-verified live** — `catia_pad` and
+   `catia_close_surface` both need a retest after redeploy before trusting this fix.
+
+3. **Robust reference selection is more built-out than initially assessed** — revise
    downward as a risk. `GeometryContext.resolve()` (`_geometry.py`) already supports
    geometric-query selection: pass `{"feature": "...", "kind": "face", "nearest_point":
    [x,y,z]}` or `{"kind": "face", "normal": [x,y,z]}` and it scores candidate

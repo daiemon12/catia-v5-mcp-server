@@ -299,8 +299,13 @@ class CATIAConnection:
 
     @property
     def shape_factory(self) -> Any:
-        """Return the active Part's solid feature factory."""
-        return self.get_active_part_body().ShapeFactory
+        """Return the active Part's solid feature factory.
+
+        ShapeFactory is a property of Part, not Body — Body only exposes
+        Shapes/Sketches. Calling .ShapeFactory on a Body raises a dynamic-
+        dispatch AttributeError (pywin32 reports it as "<unknown>.ShapeFactory").
+        """
+        return self.get_active_part().ShapeFactory
 
     def pycatia_part_document(self) -> Any:
         """Wrap the active raw COM PartDocument for typed GSD adapters."""

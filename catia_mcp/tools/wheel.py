@@ -177,7 +177,7 @@ class WheelTools:
         f.CreateClosedCircle(0, 0, v["rim_diameter"] / 2)
         f.CreateClosedCircle(0, 0, v["inner_radius"])
         sketch.CloseEdition()
-        rim = body.ShapeFactory.AddNewPad(sketch, v["rim_width"])
+        rim = part.ShapeFactory.AddNewPad(sketch, v["rim_width"])
         rim.Name = "Rim_Barrel"
         rim.IsSymmetric = True
         part.UpdateObject(rim)
@@ -210,7 +210,7 @@ class WheelTools:
             for p1, p2 in zip(pts, pts[1:] + pts[:1]):
                 f.CreateLine(*p1, *p2)
         sketch.CloseEdition()
-        web = body.ShapeFactory.AddNewPad(sketch, v["hub_thickness"])
+        web = part.ShapeFactory.AddNewPad(sketch, v["hub_thickness"])
         web.Name = "Simple_Lofted_Spoke_Web"
         web.IsSymmetric = True
         part.UpdateObject(web)
@@ -234,7 +234,7 @@ class WheelTools:
                 math.cos(a) * v["pcd"] / 2, math.sin(a) * v["pcd"] / 2, v["lug_hole_diameter"] / 2
             )
         sketch.CloseEdition()
-        pocket = body.ShapeFactory.AddNewPocket(sketch, v["rim_width"] * 2)
+        pocket = part.ShapeFactory.AddNewPocket(sketch, v["rim_width"] * 2)
         pocket.Name = "Center_Bore_And_Lugs"
         pocket.IsSymmetric = True
         part.UpdateObject(pocket)
