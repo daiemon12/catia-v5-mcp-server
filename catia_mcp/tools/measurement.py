@@ -155,9 +155,11 @@ class MeasurementTools:
 
         # Measure
         measurable = spa.GetMeasurable(ref1)
-        distance = measurable.GetMinimumDistance(ref2)
+        # CATIA's Measurable interface returns lengths in its base unit
+        # (meters), regardless of the document's display unit.
+        distance_mm = measurable.GetMinimumDistance(ref2) * 1000
 
-        return f"Minimum distance between '{elem1_name}' and '{elem2_name}': {distance:.4f} mm"
+        return f"Minimum distance between '{elem1_name}' and '{elem2_name}': {distance_mm:.4f} mm"
 
     def _get_inertia(self, density: float | None = None) -> str:
         self.conn.ensure_connected()
@@ -170,15 +172,20 @@ class MeasurementTools:
 
         result: dict[str, Any] = {}
 
+        # CATIA's Measurable interface returns Volume/Area/coordinates in its
+        # base SI units (m3, m2, m) regardless of the document's display
+        # unit; convert explicitly rather than assuming mm.
         try:
-            result["volume_mm3"] = round(measurable.Volume, 4)
-            result["volume_cm3"] = round(measurable.Volume / 1000, 4)
+            volume_m3 = measurable.Volume
+            result["volume_mm3"] = round(volume_m3 * 1e9, 4)
+            result["volume_cm3"] = round(volume_m3 * 1e6, 4)
         except Exception:
             pass
 
         try:
-            result["area_mm2"] = round(measurable.Area, 4)
-            result["area_cm2"] = round(measurable.Area / 100, 4)
+            area_m2 = measurable.Area
+            result["area_mm2"] = round(area_m2 * 1e6, 4)
+            result["area_cm2"] = round(area_m2 * 1e4, 4)
         except Exception:
             pass
 
@@ -186,9 +193,9 @@ class MeasurementTools:
             cog = [0.0, 0.0, 0.0]
             measurable.GetCOG(cog)
             result["center_of_gravity_mm"] = {
-                "x": round(cog[0], 4),
-                "y": round(cog[1], 4),
-                "z": round(cog[2], 4),
+                "x": round(cog[0] * 1000, 4),
+                "y": round(cog[1] * 1000, 4),
+                "z": round(cog[2] * 1000, 4),
             }
         except Exception:
             pass
@@ -222,16 +229,17 @@ class MeasurementTools:
 
         measurable = spa.GetMeasurable(ref)
 
-        bbox = [0.0] * 6  # xmin, ymin, zmin, xmax, ymax, zmax
+        bbox = [0.0] * 6  # xmin, ymin, zmin, xmax, ymax, zmax, in meters
         measurable.GetBoundingBox(bbox)
+        bbox_mm = [v * 1000 for v in bbox]
 
         result = {
-            "min": {"x": round(bbox[0], 4), "y": round(bbox[1], 4), "z": round(bbox[2], 4)},
-            "max": {"x": round(bbox[3], 4), "y": round(bbox[4], 4), "z": round(bbox[5], 4)},
+            "min": {"x": round(bbox_mm[0], 4), "y": round(bbox_mm[1], 4), "z": round(bbox_mm[2], 4)},
+            "max": {"x": round(bbox_mm[3], 4), "y": round(bbox_mm[4], 4), "z": round(bbox_mm[5], 4)},
             "dimensions": {
-                "length_x": round(bbox[3] - bbox[0], 4),
-                "length_y": round(bbox[4] - bbox[1], 4),
-                "length_z": round(bbox[5] - bbox[2], 4),
+                "length_x": round(bbox_mm[3] - bbox_mm[0], 4),
+                "length_y": round(bbox_mm[4] - bbox_mm[1], 4),
+                "length_z": round(bbox_mm[5] - bbox_mm[2], 4),
             },
         }
         return json.dumps(result, indent=2)

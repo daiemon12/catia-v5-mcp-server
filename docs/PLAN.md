@@ -227,9 +227,32 @@ DEPLOYMENT.md for how to query the live server).
    error when called directly. Fixed all 5 call sites — `measurement.py` (3),
    `_geometry.py`'s `_choose_subelement()` (1), `wheel.py`'s `_measure()` (1) — from
    `self.conn.app.GetWorkbench(...)` to `self.conn.active_document.GetWorkbench(...)`.
-   **Not yet re-verified live.** If this holds, it resolves the last known issue in
-   the measurement tools and unblocks live-testing the geometric-query selection path
-   (item 5).
+   **Verified live**: `catia_get_inertia` no longer errors.
+
+10. **Fixed: `Measurable.Volume`/`.Area`/`GetBoundingBox`/`GetMinimumDistance` return
+    SI base units (m³/m²/m), not mm³/mm²/mm — every measurement tool was silently
+    wrong by 1e9/1e6/1000×.** Found immediately after item 9's fix: `catia_get_inertia`
+    on a 10mm-radius × 5mm pad returned `area_mm2: 0.0009` instead of ~942. Verified by
+    hand: 942.48 mm² × 1e-6 = 0.00094248 m² → rounds to exactly `0.0009` — confirms the
+    raw value is genuinely in m², just mislabeled. Same math confirmed for volume. This
+    also explains why the wheel's first successful `measurements` looked like garbage
+    (`mass_kg: 2.6e-08`) — reinterpreting the raw `volume_mm3` field as m³ gives ~9.7
+    liters, a plausible mass (~26kg unoptimized aluminum blank) for a conservative solid
+    wheel with no back-cavity removal. Fixed all four affected call sites
+    (`_measure_distance`, `_get_inertia`'s volume/area/COG, `_get_bounding_box`,
+    `wheel.py`'s `_measure`) with explicit ×1000/×1e6/×1e9 conversions; verified the
+    conversion round-trips correctly against hand-computed geometry before deploying.
+    **Not yet re-verified live** — next redeploy should show sane values (~1571 mm³ /
+    ~942 mm² for the same test pad).
+
+    **Not fixed, flagged only**: `_geometry.py`'s `_choose_subelement()` also calls
+    `measure.GetCOG`/`GetPlane` for `nearest_point`/`normal`-based sub-element scoring
+    and has the same raw-meters values feeding a millimeter-scale comparison. Left
+    alone because the scoring is relative (picks the *minimum*-distance candidate), and
+    a uniform unit-scale error doesn't change which candidate wins — but if that
+    function's absolute distances are ever surfaced to a caller, they'd be wrong by the
+    same 1000× factor. Worth fixing for correctness/clarity even though it doesn't
+    currently produce a wrong *selection*.
 
 ## Risks
 
