@@ -250,17 +250,57 @@ DEPLOYMENT.md for how to query the live server).
 
     **New, separate issue found while verifying this fix**: `catia_get_bounding_box`
     now fails with `GetMeasurable.GetBoundingBox` (same terse, no-COM-tuple error
-    shape as the other dynamic-dispatch bugs, but this one is likely a different root
-    cause). `GetBoundingBox(bbox)` takes its result via a mutated ByRef array
-    argument — exactly the failure category the README's own Troubleshooting section
-    already names ("COM ByRef array limitations... may not work with late binding").
-    Unlike items 2/9, **not fixed** — this needs either a different array-marshaling
-    approach (e.g. a `pywintypes`/`SAFEARRAY` construction instead of a plain Python
-    list) or an early-bound (`pycatia`/makepy) call instead of late-bound dynamic
-    dispatch. Not currently blocking anything: `wheel.py`'s own bounding-box call
-    already tolerates this failure via try/except (silently omits
-    `bounding_box_mm` from `measurements`); only the standalone
-    `catia_get_bounding_box` tool surfaces a raw error to callers.
+    shape as the other dynamic-dispatch bugs). Investigated fully in item 11 below —
+    resolved as "not fixable," not "not yet fixed."
+
+11. **Resolved (not a bug): `GetBoundingBox` and `GetInertia` do not exist on
+    `Measurable` — CATIA's Automation API has no such methods.** Three redeploy cycles
+    tried increasingly specific hypotheses for item 10's `GetBoundingBox` failure: (a)
+    `VT_BYREF|VT_ARRAY|VT_R8` SAFEARRAY, (b) `VT_BYREF|VT_ARRAY|VT_VARIANT` SAFEARRAY,
+    (c) two separate 3-element arrays instead of one 6-element array. **All three
+    failed with the byte-for-byte identical error text.** That uniformity is itself
+    the diagnostic: if the problem were argument type or count, changing either
+    should have changed the failure. An identical error regardless of what's passed
+    means the call never gets past member resolution — the same failure *shape* as
+    the `ShapeFactory`/`GetWorkbench` "wrong object" bugs (items 2, 9), but this time
+    there's no right object to move it to.
+
+    Confirmed by installing `pycatia` locally (already a declared dependency; this
+    needed no CATIA connection, just reading its source — a comprehensive wrapper of
+    CATIA's real CAA V5 interfaces, built from official VBA documentation) and
+    grepping the entire package: `GetBoundingBox` and `GetInertia` do not appear
+    **anywhere** in pycatia, not even in a docstring. `Measurable`'s complete method
+    list (`pycatia/space_analyses_interfaces/measurable.py`) has `volume`, `area`,
+    `length`, `get_cog`, `get_plane`, `get_minimum_distance`, etc. — but no bounding
+    box or inertia matrix. The real inertia matrix lives on a **separate `Inertia`
+    object** (`SPAWorkbench.Inertias.Add(ref)` → `.GetInertiaMatrix()`,
+    `.mass`, `.density`, `.get_cog_position()`), not on `Measurable` at all — the
+    original ported code called a plausible-sounding but nonexistent method.
+    No genuine bounding-box capability was found anywhere pycatia covers
+    (checked `Selection`, drawing views, arrangement interfaces — none fit).
+
+    **Also found and fixed while cross-referencing pycatia's source**: `GetPlane`'s
+    real signature (confirmed from CAA V5's own VB help, quoted in pycatia's
+    docstring) is **one 9-element array** — origin xyz(0:3), first in-plane direction
+    xyz(3:6), second in-plane direction xyz(6:9) — not the two separate 3-element
+    `(origin, direction)` arguments `_choose_subelement`'s `normal`-based scoring was
+    calling it with. This was a latent bug never exercised live (no test had used
+    `normal`-based selection yet). Fixed the arity **and** a geometric error the old
+    code would have had even with correct arity: the two `GetPlane` outputs are the
+    plane's own in-plane basis vectors, not its normal — using either directly as "the
+    normal" is backwards (in-plane vectors are perpendicular to the actual face
+    normal). The true face normal is `direction1 × direction2` (cross product); now
+    computed explicitly before scoring.
+
+    **Resolution**: `catia_get_bounding_box` now raises a clear, honest error
+    explaining the API limitation instead of a cryptic COM-shaped one.
+    `wheel.py`'s `_measure()` no longer attempts the doomed call at all — removed
+    rather than left as a silently-always-failing try/except. `GetPlane`'s arity/
+    cross-product fix is a real, high-confidence bug fix, live-untested as of this
+    commit. A genuine bounding box, if ever needed, requires new code (enumerate
+    vertices via `Topology.Vertex` search — the same pattern `list_subelements`
+    already uses — and take coordinate min/max), not a different argument shape to
+    an existing call; not pursued now since nothing in Phase 2/3 requires it.
 
     **Not fixed, flagged only**: `_geometry.py`'s `_choose_subelement()` also calls
     `measure.GetCOG`/`GetPlane` for `nearest_point`/`normal`-based sub-element scoring

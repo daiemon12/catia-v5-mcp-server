@@ -8,7 +8,7 @@ import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.tools._geometry import byref_doubles, object_schema
+from catia_mcp.tools._geometry import object_schema
 from catia_mcp.tools.knowledge import KnowledgeTools
 
 
@@ -316,12 +316,9 @@ class WheelTools:
             data["mass_kg"] = volume_m3 * density  # density is kg/m3
         except Exception:
             pass
-        try:
-            # See measurement.py's _get_bounding_box for why this is two
-            # separate 3-element arrays, not one 6-element array.
-            omin, omax = byref_doubles(3), byref_doubles(3)
-            m.GetBoundingBox(omin, omax)
-            data["bounding_box_mm"] = [v * 1000 for v in (*omin.value, *omax.value)]
-        except Exception:
-            pass
+        # CATIA's Automation API has no bounding-box method on Measurable at
+        # all (confirmed against pycatia's source, not a marshaling bug - see
+        # measurement.py's _get_bounding_box and docs/PLAN.md); bounding_box_mm
+        # is intentionally omitted rather than attempting a call that cannot
+        # succeed.
         return data
