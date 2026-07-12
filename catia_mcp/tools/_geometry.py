@@ -22,24 +22,24 @@ def result(**values: Any) -> str:
 
 
 def byref_doubles(n: int) -> VARIANT:
-    """A ByRef SAFEARRAY for CATIA methods that fill an array argument
-    (GetBoundingBox, GetCOG, GetPlane, GetInertia).
-
-    Plain Python lists do not marshal correctly as output parameters under
-    win32com late binding — CATIA never writes into them, so the call
-    silently returns zeros or fails outright (seen as a bare
-    "GetMeasurable.GetBoundingBox" AttributeError-style error with no COM
-    HRESULT).
-
-    A first attempt using a strongly-typed VT_R8 array (VT_BYREF|VT_ARRAY|
-    VT_R8) made GetBoundingBox fail identically and made GetCOG regress
-    from "runs but returns zeros" to "raises" — evidence the strong typing
-    was rejected where a loosely-typed list was at least accepted (and
-    silently ignored). CATIA's VBA-oriented Automation IDL commonly
-    declares array out-parameters as generic Variant (for VBA
-    compatibility), not double[]; VT_ARRAY|VT_VARIANT matches that and is
-    what CATIA's own type library expects. Read the result back from the
+    """A ByRef SAFEARRAY (VT_BYREF|VT_ARRAY|VT_VARIANT) for CATIA methods
+    that fill an array output argument. Read the result back from the
     VARIANT's `.value` after the call.
+
+    Currently unused: the two calls this was built for turned out to be
+    wrong for a different reason. GetBoundingBox does not exist anywhere in
+    CATIA's Automation API (confirmed against pycatia's source — not a
+    marshaling problem at all; three different argument shapes, including
+    this VARIANT SAFEARRAY, all failed with the byte-for-byte identical
+    "GetMeasurable.GetBoundingBox" error, which is itself the tell that the
+    member never resolves regardless of arguments). GetCOG/GetInertia/
+    GetPlane are real methods, but GetCOG/GetPlane work fine with plain
+    Python lists once given the correct arity (see _choose_subelement), and
+    GetInertia's real equivalent lives on a separate Inertia object
+    (SPAWorkbench.Inertias.Add), not on Measurable at all.
+
+    Kept in case a genuine CATIA ByRef-array marshaling problem turns up
+    later — see docs/PLAN.md for the full investigation.
     """
     return VARIANT(pythoncom.VT_BYREF | pythoncom.VT_ARRAY | pythoncom.VT_VARIANT, [0.0] * n)
 
@@ -133,12 +133,25 @@ class GeometryContext:
                         center_mm = [v * 1000 for v in center]
                         score += math.dist(center_mm, point)
                     if normal:
-                        origin = [0.0, 0.0, 0.0]
-                        direction = [0.0, 0.0, 0.0]
-                        measure.GetPlane(origin, direction)
-                        length = math.sqrt(sum(v * v for v in direction)) or 1.0
+                        # GetPlane(oComponents) takes ONE 9-element array, not
+                        # two 3-element ones: origin xyz(0:3), first in-plane
+                        # direction xyz(3:6), second in-plane direction
+                        # xyz(6:9) - confirmed against CAA V5's VB help via
+                        # pycatia's source. The two directions are the plane's
+                        # own in-plane basis vectors, not its normal; the true
+                        # face normal is their cross product.
+                        components = [0.0] * 9
+                        measure.GetPlane(components)
+                        d1 = components[3:6]
+                        d2 = components[6:9]
+                        face_normal = (
+                            d1[1] * d2[2] - d1[2] * d2[1],
+                            d1[2] * d2[0] - d1[0] * d2[2],
+                            d1[0] * d2[1] - d1[1] * d2[0],
+                        )
+                        length = math.sqrt(sum(v * v for v in face_normal)) or 1.0
                         target_len = math.sqrt(sum(v * v for v in normal)) or 1.0
-                        dot = sum(a * b for a, b in zip(direction, normal)) / (length * target_len)
+                        dot = sum(a * b for a, b in zip(face_normal, normal)) / (length * target_len)
                         score += 1000.0 * (1.0 - dot)
                     scored.append((score, match))
                 except Exception:

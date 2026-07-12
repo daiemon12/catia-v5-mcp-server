@@ -9,7 +9,6 @@ import json
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.tools._geometry import byref_doubles
 
 
 class MeasurementTools:
@@ -225,34 +224,24 @@ class MeasurementTools:
         return json.dumps(result, indent=2)
 
     def _get_bounding_box(self) -> str:
-        self.conn.ensure_connected()
-        spa = self.conn.active_document.GetWorkbench("SPAWorkbench")
-        part = self.conn.get_active_part()
-        body = self.conn.get_active_part_body()
-        ref = part.CreateReferenceFromObject(body)
-
-        measurable = spa.GetMeasurable(ref)
-
-        # Two attempts at a single 6-element ByRef array (VT_R8, then
-        # VT_VARIANT) both failed identically ("GetMeasurable.GetBoundingBox",
-        # no COM error tuple) - a signature-independent failure suggests the
-        # problem was never argument type, but argument count: CATIA's VBA-era
-        # Automation IDL commonly declares GetBoundingBox(oMin, oMax) as two
-        # separate 3-element out-params, not one combined 6-element array.
-        omin, omax = byref_doubles(3), byref_doubles(3)
-        measurable.GetBoundingBox(omin, omax)
-        bbox_mm = [v * 1000 for v in (*omin.value, *omax.value)]
-
-        result = {
-            "min": {"x": round(bbox_mm[0], 4), "y": round(bbox_mm[1], 4), "z": round(bbox_mm[2], 4)},
-            "max": {"x": round(bbox_mm[3], 4), "y": round(bbox_mm[4], 4), "z": round(bbox_mm[5], 4)},
-            "dimensions": {
-                "length_x": round(bbox_mm[3] - bbox_mm[0], 4),
-                "length_y": round(bbox_mm[4] - bbox_mm[1], 4),
-                "length_z": round(bbox_mm[5] - bbox_mm[2], 4),
-            },
-        }
-        return json.dumps(result, indent=2)
+        # GetBoundingBox does not exist anywhere in CATIA's Automation API.
+        # Confirmed by reading pycatia's source (a comprehensive wrapper of
+        # the real CAA V5 interfaces, built from official VBA documentation):
+        # Measurable has no such method, and no other interface pycatia
+        # covers (Selection, drawing views, etc.) exposes one either. Three
+        # different call shapes against Measurable (1x6 VT_R8 array, 1x6
+        # VT_VARIANT array, 2x3 VT_VARIANT arrays) all failed with the
+        # identical "GetMeasurable.GetBoundingBox" error regardless of
+        # argument type or count - the signature never mattered because the
+        # member itself doesn't resolve. A real bounding box would need to be
+        # computed manually (e.g. enumerating vertices via Topology.Vertex
+        # search and taking min/max coordinates), which is a separate,
+        # non-trivial feature, not a bug fix - see docs/PLAN.md.
+        raise RuntimeError(
+            "CATIA's Automation API has no bounding-box method on Measurable "
+            "(confirmed against the real interface, not a marshaling bug). "
+            "Use catia_get_inertia for volume/area/center-of-gravity instead."
+        )
 
     def _get_parameters(self, name_filter: str | None = None) -> str:
         self.conn.ensure_connected()
