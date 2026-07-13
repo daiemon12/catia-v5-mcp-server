@@ -1,10 +1,12 @@
 # GSD (Generative Shape Design) Extension — Implementation Plan
 
-**Status as of 2026-07-11:** Stages 1–6 below are **coded but not yet verified against
+**Status as of 2026-07-13:** Stages 1–6 below are **coded but not yet verified against
 live CATIA**. This document is the durable, portable version of the plan — written so
 work can continue from a fresh session or a different tool (e.g. Codex) without the
 originating conversation's history. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for how to
-reach the running CATIA instance and exercise these tools.
+reach the running CATIA instance and exercise these tools. Deployment host moved to
+`192.168.5.42` and a fidelity gap-analysis against a real wheel drawing was added
+(items 12-13 in Open Work) — closing those, in order, is the current critical path.
 
 ## Goal
 
@@ -310,6 +312,56 @@ DEPLOYMENT.md for how to query the live server).
     function's absolute distances are ever surfaced to a caller, they'd be wrong by the
     same 1000× factor. Worth fixing for correctness/clarity even though it doesn't
     currently produce a wrong *selection*.
+
+12. **`catia_design_wheel`'s geometry is far simpler than a real production wheel
+    drawing** — found 2026-07-13 while checking the tool against a sample
+    front-view/side-view technical drawing (10-spoke cast wheel, JWL-style barrel
+    cross-section). Concrete gaps, in priority order for closing them:
+    - **Barrel/bead-seat profile is not built.** [`wheel.py`'s rim phase](wheel.py)
+      (`_build_geometry`, the `Rim_Profile`/`Rim_Barrel` sketch+pad) is two
+      concentric circles padded straight — a plain cylinder. A real wheel's side
+      profile (front bead seat, safety hump, drop-center well, rear bead seat,
+      flange radii) needs a revolved profile (`catia_shaft`/`catia_groove`, or a
+      GSD revolve via `catia_revolve_surface`) built from the actual cross-section
+      curve, not an annular pad. This is the single biggest visual/functional gap
+      versus a real drawing and should be the next thing built.
+    - **Spoke crown surfaces are not lofted.** The `Hub_Spokes_Profile`/
+      `Simple_Lofted_Spoke_Web` phase pads a flat radial quad between straight
+      sketch lines — despite the tool's only `spoke_style` value being
+      `"simple_lofted"`, nothing is actually lofted. `catia_loft`, `catia_sweep`,
+      `catia_blend`, `catia_close_surface`, and `catia_thick_surface` all exist as
+      standalone tools ([`surface.py`](surface.py),
+      [`part_design_advanced.py`](part_design_advanced.py)) but the wheel composite
+      never calls them. Wiring a real loft (hub-side guide curve → rim-side guide
+      curve → close/thicken to solid) into this phase is the second priority.
+    - **Valve hole is not implemented.** `valve_hole_diameter` is defined in
+      `DEFAULTS` and accepted as an argument but never consumed anywhere in
+      `_build_geometry` — no hole is ever cut. Needs an off-axis hole through the
+      drop-well wall once the barrel profile (above) exists to cut it into.
+    - **Fillet/draft styling is not applied.** `catia_fillet`, `catia_draft`,
+      `catia_variable_fillet`, `catia_advanced_draft` exist but the wheel tool
+      never calls them — a real drawing's spoke-root fillets and casting draft
+      angles currently require separate manual tool calls after `catia_design_wheel`
+      returns, not a single build.
+    - **No text/engraving capability exists anywhere in the tool set.** A branded
+      wheel (raised or engraved logo/model text on a spoke) cannot be produced —
+      this would be new capability (sketch text + emboss/pocket), not a wiring gap.
+    - **Not in scope regardless of the above**: GD&T, Class-A surface continuity
+      (G2/G3), FEA/fatigue/impact certification, DFM sign-off — see the Goal
+      section's stated ceiling. Closing the gaps above gets to "matches this
+      drawing's geometry," not to a released, certified part.
+    - Before trusting any of the above once built: per items 1 and 5-7, `catia_loft`,
+      `catia_close_surface`, `catia_sew_surface`, `catia_variable_fillet`, and
+      `catia_advanced_draft` are still unverified against live CATIA — smoke-test
+      each individually before chaining them into the wheel composite.
+
+13. **Deployment host moved 192.168.5.10 → 192.168.5.42** (2026-07-13). See
+    [`DEPLOYMENT.md`](DEPLOYMENT.md) — updated throughout, plus a new
+    "Checking connectivity" section with a TCP-reachability and an authenticated
+    MCP `initialize` check. Re-run the Open Work #1 smoke-test sequence against the
+    new address before assuming prior live-verification results (items 1-11 above)
+    still hold on this host — they were confirmed against `.10`; nothing suggests
+    the CATIA install itself changed, but this hasn't been re-confirmed on `.42`.
 
 ## Risks
 
