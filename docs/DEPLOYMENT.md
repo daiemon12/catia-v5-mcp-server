@@ -301,10 +301,11 @@ automation and file I/O:
   CATIA's API has no PNG format, writes a `.png` request as JPEG with a corrected `.jpg`
   path (verified live 2026-07-14 — the returned path reflects the real file). Earlier
   builds' EMF-under-`.png` files predate this fix.
-- **`catia_open_document` modal caveat** — opening a document that is already open in the
-  session raises a modal dialog that hangs the call until it is dismissed (same class as
-  the SaveAs modal the wheel tool guards against). To screenshot a just-built part, drive
-  the already-active document instead of reopening it by path.
+- **`catia_open_document` already-open handling** — CATIA's `Documents.Open` raises a
+  blocking modal if the target document is already open in the session. `catia_open_document`
+  now guards against this: it scans open documents by path and reuses/activates a match
+  instead of reopening (verified live — reopening an open part returns in ~2 s). The raw
+  modal risk still exists for any code that calls `Documents.Open` directly.
 
 ## Repos
 

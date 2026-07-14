@@ -539,22 +539,27 @@ DEPLOYMENT.md for how to query the live server).
       returned path to `.jpg` so content and name agree. Deployed and verified live: iso/
       front/right captures of the filleted wheel wrote real JPEGs, copied back and viewed.
       **QA result:** the wheel is structurally sound and undamaged — correct barrel
-      profile (flanges/bead-seats/drop-center), ten crowned spokes, hub, bore, lugs; the
-      ~13% volume drop softened spoke edges without wrecking geometry. Individual R4 fillet
-      placement (concave root vs convex edge) is still not resolvable at overview zoom —
-      needs a zoomed spoke/hub-junction capture to finish QA.
-    - **[NEW known issue] `catia_open_document` on an already-open document raises a modal**
-      and hangs the call until dismissed (observed 2026-07-14 opening the just-saved wheel,
-      which was still open as `Part26`; five queued calls timed out before it cleared).
-      Same modal-hang class as the SaveAs case the wheel tool already guards against — a
-      `_ensure_..._not_already_open`-style guard (or reusing the active doc instead of
-      reopening) should be added to `catia_open_document`. Workaround for QA: capture the
-      active document directly rather than reopening by path.
-    - **Next:** (1) zoomed junction capture to finish fillet-placement QA, then refine
-      `_apply_spoke_fillets` edge targeting (bias the nearest_point to the concave weld, or
-      reduce the radius) if the fillets are on convex edges; (2) guard `catia_open_document`
-      against the already-open modal; (3) return to the imposed-vertex fillet and
-      advanced-draft solver semantics if variable blends / casting draft are needed.
+      profile (flanges/bead-seats/drop-center), ten crowned spokes, hub, bore, lugs.
+      **The fillet placement is correct** (confirmed by a same-spec A/B, not just the
+      screenshots): baseline `apply_spoke_fillets:false` = 2,740,178 mm³ vs filleted
+      2,742,278 mm³, i.e. the fillets *add* ~2,100 mm³ — the signature of **concave
+      spoke-root fillets** filling the corner, exactly as intended. The earlier "~13%
+      volume drop" was a false alarm from comparing against a different-spec prior build;
+      the correct same-spec comparison resolves it. `nearest_point` targeting lands on the
+      right (concave root) edges.
+    - **[FIXED + LIVE-VERIFIED] `catia_open_document` already-open modal.** Opening a
+      document that is already open raised a modal that hung the call until dismissed
+      (observed 2026-07-14 opening the just-saved wheel, still open as `Part26`; five
+      queued calls timed out before it cleared). `document.py`'s `_open_document` now scans
+      open documents by normalized `FullName` and, on a match, activates and reuses the
+      existing document instead of calling `Documents.Open` again. Verified live: reopening
+      the already-open wheel returned "already open; reused" in ~2 s (was 120 s+ hang).
+    - **Next:** the styling phase's core is delivered and QA'd. Remaining, in rough order:
+      (1) the imposed-vertex varying fillet (`AddImposedVertex` `E_FAIL`) and advanced-draft
+      solver semantics, if variable blends / casting draft are wanted in the composite;
+      (2) cosmetic — hide the `Spoke_Construction` geometrical set by default; (3) optional
+      zoomed-junction capture / a camera-zoom tool for close-up QA (the A/B volume check
+      already confirmed the fillets are correct concave root blends).
     - **Deployed to `.42` this session (all with `.bak` backups + verified SHA-256):**
       `_geometry.py` (selection fix + reference-object fix — verified working),
       `part_design_advanced.py` (varying-fillet + advanced-draft signatures),
