@@ -301,6 +301,14 @@ class SketcherTools:
         self._active_sketch = sketch
         self._active_factory = sketch.OpenEdition()
 
+        # Record the name so Part Design features (pad/pocket/hole/shaft) can
+        # target this exact sketch instead of guessing via Sketches.Item(Count),
+        # which mis-resolves once sketches get absorbed into features.
+        try:
+            self.conn.active_sketch_name = sketch.Name
+        except Exception:
+            self.conn.active_sketch_name = None
+
         plane_names = {"xy": "XY (front)", "yz": "YZ (right)", "zx": "ZX (top)"}
         return f"Sketch created on {plane_names.get(plane_key, plane)} plane. Ready for geometry."
 
