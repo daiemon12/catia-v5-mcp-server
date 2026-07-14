@@ -6,7 +6,6 @@ Also includes screenshot capture.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
@@ -68,15 +67,17 @@ class ExportTools:
             {
                 "name": "catia_screenshot",
                 "description": (
-                    "Capture a screenshot of the current 3D view and save as image file. "
-                    "Supports PNG, JPG, BMP."
+                    "Capture a screenshot of the current 3D view and save as an image. "
+                    "Raster formats JPG/BMP/TIFF and vector EMF/CGM are chosen by the "
+                    "file extension. CATIA cannot emit PNG, so a .png path is written as "
+                    ".jpg instead (the returned path reflects this)."
                 ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "file_path": {
                             "type": "string",
-                            "description": "Output image path (e.g., 'C:/screenshots/part.png')",
+                            "description": "Output image path (e.g., 'C:/screenshots/part.jpg')",
                         },
                         "width": {
                             "type": "integer",
@@ -175,6 +176,20 @@ class ExportTools:
 
         return f"Exported to {file_path}{size_info} (format: {fmt_key.upper()})"
 
+    # CATIA's CatCaptureFormat enum (V5). There is NO PNG format - the raster
+    # options are TIFF/BMP/JPEG; EMF/CGM are vector. CaptureToFile ignores the
+    # file extension and writes whatever this integer selects, so passing 1
+    # (EMF) wrote EMF content under a .png name regardless of the path.
+    _CAPTURE_FORMATS = {
+        ".cgm": 0,
+        ".emf": 1,
+        ".tif": 2,
+        ".tiff": 2,
+        ".bmp": 4,
+        ".jpg": 5,
+        ".jpeg": 5,
+    }
+
     def _screenshot(self, file_path: str, width: int = 1920, height: int = 1080) -> str:
         self.conn.ensure_connected()
 
@@ -182,15 +197,24 @@ class ExportTools:
         # the output directory exists.
         file_path = normalize_catia_path(file_path)
 
-        # Capture via the active viewer
-        viewer = self.conn.active_editor.ActiveViewer
-        viewer.CaptureToFile(1, file_path)  # 1 = catCaptureFormatPNG or auto by extension
+        ext = os.path.splitext(file_path)[1].lower()
+        capture_format = self._CAPTURE_FORMATS.get(ext)
+        if capture_format is None:
+            # PNG (or any unsupported extension): CATIA cannot emit PNG, so write
+            # a JPEG and rename the path to match, keeping content and name in
+            # agreement instead of an EMF-under-.png mismatch.
+            capture_format = 5  # catCaptureFormatJPEG
+            file_path = os.path.splitext(file_path)[0] + ".jpg"
 
-        return f"Screenshot saved to {file_path} ({width}x{height})"
+        # Capture via the active viewer.
+        viewer = self.conn.active_viewer
+        viewer.CaptureToFile(capture_format, file_path)
+
+        return f"Screenshot saved to {file_path}"
 
     def _set_view(self, view: str) -> str:
         self.conn.ensure_connected()
-        viewer = self.conn.active_editor.ActiveViewer
+        viewer = self.conn.active_viewer
         viewpoint = viewer.Viewpoint3D
 
         # Standard view direction vectors and up vectors
@@ -222,6 +246,6 @@ class ExportTools:
 
     def _fit_all(self) -> str:
         self.conn.ensure_connected()
-        viewer = self.conn.active_editor.ActiveViewer
+        viewer = self.conn.active_viewer
         viewer.Reframe()
         return "View fitted to all geometry"

@@ -64,7 +64,8 @@ class SketcherTools:
                 "name": "catia_sketch_line",
                 "description": (
                     "Draw a line in the active sketch from (x1, y1) to (x2, y2). "
-                    "Coordinates in mm."
+                    "Coordinates in mm. The line can be construction geometry or "
+                    "the centerline used by shaft/groove features."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -73,6 +74,16 @@ class SketcherTools:
                         "y1": {"type": "number", "description": "Start Y coordinate (mm)"},
                         "x2": {"type": "number", "description": "End X coordinate (mm)"},
                         "y2": {"type": "number", "description": "End Y coordinate (mm)"},
+                        "construction": {
+                            "type": "boolean",
+                            "description": "Create construction geometry.",
+                            "default": False,
+                        },
+                        "centerline": {
+                            "type": "boolean",
+                            "description": "Set this line as the shaft/groove centerline.",
+                            "default": False,
+                        },
                     },
                     "required": ["x1", "y1", "x2", "y2"],
                 },
@@ -238,6 +249,8 @@ class SketcherTools:
                 return self._draw_line(
                     arguments["x1"], arguments["y1"],
                     arguments["x2"], arguments["y2"],
+                    arguments.get("construction", False),
+                    arguments.get("centerline", False),
                 )
             case "catia_sketch_rectangle":
                 return self._draw_rectangle(
@@ -322,11 +335,24 @@ class SketcherTools:
         self.conn.refresh_display()
         return "Sketch closed. You can now apply Part Design features (pad, pocket, etc.)."
 
-    def _draw_line(self, x1: float, y1: float, x2: float, y2: float) -> str:
+    def _draw_line(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        construction: bool = False,
+        centerline: bool = False,
+    ) -> str:
         self._ensure_sketch_open()
         factory = self._active_factory
         line = factory.CreateLine(x1, y1, x2, y2)
-        return f"Line created from ({x1}, {y1}) to ({x2}, {y2}) mm"
+        if construction or centerline:
+            line.Construction = True
+        if centerline:
+            self._active_sketch.CenterLine = line
+        kind = " centerline" if centerline else " construction" if construction else ""
+        return f"Line created{kind} from ({x1}, {y1}) to ({x2}, {y2}) mm"
 
     def _draw_rectangle(self, x1: float, y1: float, x2: float, y2: float) -> str:
         self._ensure_sketch_open()
@@ -383,7 +409,7 @@ class SketcherTools:
             ctrl_pt = factory.CreatePoint(pt[0], pt[1])
             spline_pts.append(ctrl_pt)
 
-        spline = factory.CreateSpline(spline_pts)
+        factory.CreateSpline(spline_pts)
 
         if closed and len(points) >= 3:
             # Close the spline by adding a line from last to first point

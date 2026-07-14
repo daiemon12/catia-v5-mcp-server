@@ -8,13 +8,19 @@ import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.tools._geometry import object_schema
+from catia_mcp.paths import normalize_catia_path
+from catia_mcp.tools._geometry import GeometryContext, object_schema, set_revolution_angle
 from catia_mcp.tools.knowledge import KnowledgeTools
 
 
 DEFAULTS = {
     "hub_thickness": 28.0,
     "flange_height": 12.0,
+    "flange_lip_width": 8.0,
+    "bead_seat_width": 20.0,
+    "safety_hump_width": 10.0,
+    "safety_hump_height": 5.0,
+    "drop_center_depth": 14.0,
     "rim_thickness": 8.0,
     "spoke_thickness": 16.0,
     "draft_angle": 2.0,
@@ -23,6 +29,7 @@ DEFAULTS = {
     "lug_hole_diameter": 14.0,
     "material_density": 2700.0,
     "export_step": True,
+    "apply_spoke_fillets": True,
 }
 
 
@@ -43,15 +50,24 @@ class WheelTools:
             "spoke_style": {"type": "string", "enum": ["simple_lofted"]},
             "hub_thickness": positive,
             "flange_height": positive,
+            "flange_lip_width": {**positive, "default": DEFAULTS["flange_lip_width"]},
+            "bead_seat_width": {**positive, "default": DEFAULTS["bead_seat_width"]},
+            "safety_hump_width": {**positive, "default": DEFAULTS["safety_hump_width"]},
+            "safety_hump_height": {**positive, "default": DEFAULTS["safety_hump_height"]},
+            "drop_center_depth": {**positive, "default": DEFAULTS["drop_center_depth"]},
             "rim_thickness": positive,
             "spoke_thickness": positive,
             "draft_angle": {"type": "number", "minimum": 0, "maximum": 10},
             "fillet_radius": positive,
-            "valve_hole_diameter": positive,
+            "valve_hole_diameter": {
+                **positive,
+                "default": DEFAULTS["valve_hole_diameter"],
+            },
             "lug_hole_diameter": positive,
             "material_density": positive,
             "output_path": {"type": "string"},
             "export_step": {"type": "boolean", "default": True},
+            "apply_spoke_fillets": {"type": "boolean", "default": True},
             "part_name": {"type": "string", "default": "MCP_Wheel"},
         }
         required = [
@@ -84,6 +100,11 @@ class WheelTools:
             "center_bore",
             "hub_thickness",
             "flange_height",
+            "flange_lip_width",
+            "bead_seat_width",
+            "safety_hump_width",
+            "safety_hump_height",
+            "drop_center_depth",
             "rim_thickness",
             "spoke_thickness",
             "fillet_radius",
@@ -97,8 +118,25 @@ class WheelTools:
             raise ValueError("bolt_count must be between 3 and 10")
         if not 3 <= values["spoke_count"] <= 30:
             raise ValueError("spoke_count must be between 3 and 30")
+        if values["safety_hump_height"] >= values["flange_height"]:
+            raise ValueError("safety_hump_height must be less than flange_height")
+        profile_end_width = (
+            values["flange_lip_width"] + values["bead_seat_width"] + values["safety_hump_width"]
+        )
+        if values["rim_width"] <= 2 * profile_end_width:
+            raise ValueError(
+                "rim_width must be greater than twice the combined flange lip, "
+                "bead seat and safety hump widths"
+            )
         outer_radius = values["rim_diameter"] / 2
-        inner_radius = outer_radius - values["flange_height"] - values["rim_thickness"]
+        bead_seat_radius = outer_radius - values["flange_height"]
+        drop_center_radius = bead_seat_radius - values["drop_center_depth"]
+        inner_radius = drop_center_radius - values["rim_thickness"]
+        if inner_radius <= 0:
+            raise ValueError(
+                "rim_diameter, flange_height, drop_center_depth and rim_thickness "
+                "leave no positive inner radius"
+            )
         hub_radius = max(
             values["pcd"] / 2 + values["lug_hole_diameter"], values["center_bore"] / 2 + 15
         )
@@ -112,8 +150,152 @@ class WheelTools:
         if values["spoke_thickness"] >= pitch_at_hub * 0.8:
             raise ValueError("spoke_thickness/spoke_count would cause spoke self-intersection")
         values["inner_radius"] = inner_radius
+        values["bead_seat_radius"] = bead_seat_radius
+        values["drop_center_radius"] = drop_center_radius
         values["hub_radius"] = hub_radius
+        values.update(WheelTools._valve_hole_geometry(values))
         return values
+
+    @staticmethod
+    def _rim_profile_points(values: dict[str, Any]) -> list[tuple[float, float]]:
+        """Return a closed (radius, axial-position) polygon for the rim shaft."""
+        half_width = values["rim_width"] / 2
+        lip = values["flange_lip_width"]
+        seat = values["bead_seat_width"]
+        hump = values["safety_hump_width"]
+        outer = values["rim_diameter"] / 2
+        bead = values["bead_seat_radius"]
+        well = values["drop_center_radius"]
+        thickness = values["rim_thickness"]
+
+        left_hump_end = -half_width + lip + seat + hump
+        right_hump_start = half_width - lip - seat - hump
+        center_span = right_hump_start - left_hump_end
+        transition = center_span / 3
+
+        outer_profile = [
+            (outer, -half_width),
+            (bead, -half_width + lip),
+            (bead, -half_width + lip + seat),
+            (bead + values["safety_hump_height"], -half_width + lip + seat + hump / 2),
+            (bead, left_hump_end),
+            (well, left_hump_end + transition),
+            (well, right_hump_start - transition),
+            (bead, right_hump_start),
+            (bead + values["safety_hump_height"], right_hump_start + hump / 2),
+            (bead, half_width - lip - seat),
+            (bead, half_width - lip),
+            (outer, half_width),
+        ]
+        inner_profile = [(radius - thickness, axial) for radius, axial in reversed(outer_profile)]
+        return outer_profile + inner_profile
+
+    @staticmethod
+    def _valve_hole_geometry(values: dict[str, Any]) -> dict[str, float]:
+        """Return a radial valve drilling position clear of humps and the +X spoke."""
+        half_width = values["rim_width"] / 2
+        end_width = (
+            values["flange_lip_width"] + values["bead_seat_width"] + values["safety_hump_width"]
+        )
+        center_span = values["rim_width"] - 2 * end_width
+        transition = center_span / 3
+        flat_left = -half_width + end_width + transition
+        flat_right = half_width - end_width - transition
+        hole_radius = values["valve_hole_diameter"] / 2
+        clearance = 2.0
+        allowed_left = flat_left + hole_radius + clearance
+        allowed_right = flat_right - hole_radius - clearance
+        if allowed_left > allowed_right:
+            raise ValueError(
+                "valve_hole_diameter does not fit on the flat drop-center wall "
+                "with 2 mm clearance from its transitions"
+            )
+
+        rim_section = WheelTools._spoke_sections(values)[-1]
+        spoke_low = rim_section["crown"] - rim_section["depth"] / 2
+        spoke_high = rim_section["crown"] + rim_section["depth"] / 2
+        candidates = (allowed_left, allowed_right)
+
+        def axial_gap(position: float) -> float:
+            hole_low = position - hole_radius
+            hole_high = position + hole_radius
+            if hole_high < spoke_low:
+                return spoke_low - hole_high
+            if spoke_high < hole_low:
+                return hole_low - spoke_high
+            return -min(hole_high, spoke_high) + max(hole_low, spoke_low)
+
+        axial_position = max(candidates, key=axial_gap)
+        if axial_gap(axial_position) < clearance:
+            raise ValueError(
+                "rim_width leaves no valve-hole position clear of the drop-center "
+                "transitions and the nearest spoke"
+            )
+
+        return {
+            "valve_axial_position": axial_position,
+            "valve_plane_radius": values["drop_center_radius"] - values["rim_thickness"] / 2,
+            "valve_pocket_depth": values["rim_thickness"] * 2,
+        }
+
+    @staticmethod
+    def _spoke_sections(values: dict[str, Any]) -> list[dict[str, float]]:
+        """Return radial stations and closed-section dimensions for one +X spoke."""
+        root_overlap = min(2.0, values["fillet_radius"] / 2)
+        rim_overlap = values["rim_thickness"] / 2
+        root_radius = values["hub_radius"] - root_overlap
+        rim_radius = values["inner_radius"] + rim_overlap
+        crown = max(
+            -values["hub_thickness"] / 3, min(values["offset"] * 0.35, values["hub_thickness"] / 3)
+        )
+        return [
+            {
+                "radius": root_radius,
+                "width": values["spoke_thickness"],
+                "depth": values["hub_thickness"] * 0.72,
+                "crown": 0.0,
+            },
+            {
+                "radius": root_radius + (rim_radius - root_radius) * 0.55,
+                "width": values["spoke_thickness"] * 0.72,
+                "depth": values["hub_thickness"] * 0.52,
+                "crown": crown,
+            },
+            {
+                "radius": rim_radius,
+                "width": values["spoke_thickness"] * 0.62,
+                "depth": values["hub_thickness"] * 0.42,
+                "crown": crown * 0.45,
+            },
+        ]
+
+    @staticmethod
+    def _spoke_guide_points(
+        sections: list[dict[str, float]], side: float
+    ) -> list[tuple[float, float, float]]:
+        """Return global XYZ points along one upper corner of the spoke sections."""
+        return [
+            (
+                section["radius"],
+                side * section["width"] / 2,
+                section["crown"] + section["depth"] / 2,
+            )
+            for section in sections
+        ]
+
+    @staticmethod
+    def _spoke_section_points(section: dict[str, float]) -> list[tuple[float, float, float]]:
+        """Return global XYZ corner points for a closed rounded spline section."""
+        half_width = section["width"] / 2
+        z1 = section["crown"] - section["depth"] / 2
+        z2 = section["crown"] + section["depth"] / 2
+        radius = section["radius"]
+        return [
+            (radius, -half_width, z1),
+            (radius, half_width, z1),
+            (radius, half_width, z2),
+            (radius, -half_width, z2),
+        ]
 
     def execute(self, tool_name: str, args: dict[str, Any]) -> str:
         if tool_name != "catia_design_wheel":
@@ -150,6 +332,7 @@ class WheelTools:
                 ("spoke_count", "integer"),
                 ("hub_thickness", "length"),
                 ("spoke_thickness", "length"),
+                ("valve_hole_diameter", "length"),
             ):
                 knowledge.execute(
                     "catia_create_parameter",
@@ -167,7 +350,9 @@ class WheelTools:
                 # because SPAWorkbench.GetMeasurable couldn't be reached.
                 report["measurements"] = self._measure(values["material_density"])
             except Exception as exc:
-                report["warnings"].append(f"Measurement step failed (geometry was built and saved): {exc}")
+                report["warnings"].append(
+                    f"Measurement step failed (geometry was built and saved): {exc}"
+                )
             report["status"] = "complete"
         except Exception as exc:
             report["status"] = "failed"
@@ -191,67 +376,190 @@ class WheelTools:
         body = self.conn.get_active_part_body()
         origin = part.OriginElements
         names: list[str] = []
-        # Rim barrel: annular pad on XY, centered across width.
-        sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
+        # Revolve the complete tire-side cross-section around the wheel's Z axis.
+        # On CATIA's principal YZ sketch, the vertical sketch axis maps to Z.
+        sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneYZ))
         self._try_rename(sketch, "Rim_Profile")
         f = sketch.OpenEdition()
-        f.CreateClosedCircle(0, 0, v["rim_diameter"] / 2)
-        f.CreateClosedCircle(0, 0, v["inner_radius"])
+        points = self._rim_profile_points(v)
+        for p1, p2 in zip(points, points[1:] + points[:1]):
+            f.CreateLine(*p1, *p2)
+        centerline = f.CreateLine(0, -v["rim_width"], 0, v["rim_width"])
+        centerline.Construction = True
+        sketch.CenterLine = centerline
         sketch.CloseEdition()
-        rim = part.ShapeFactory.AddNewPad(sketch, v["rim_width"])
+        rim = part.ShapeFactory.AddNewShaft(sketch)
         self._try_rename(rim, "Rim_Barrel")
-        rim.IsSymmetric = True
+        set_revolution_angle(rim, 360)
         part.UpdateObject(rim)
         names.append(rim.Name)
-        report["phases"].append({"name": "rim", "status": "complete", "feature": rim.Name})
-        # Hub disk and straight tapered spoke web are one sketch/pad; the radial sectors
-        # create a robust precursor solid that later fillet/draft operations can style.
+        report["phases"].append(
+            {
+                "name": "rim",
+                "status": "complete",
+                "feature": rim.Name,
+                "note": "Revolved flange, bead-seat, safety-hump and drop-center profile.",
+            }
+        )
+        # The first loft overlaps the existing rim. The hub is deliberately added
+        # after the spoke pattern so every Part Design feature stays a connected solid.
+        hsf = part.HybridShapeFactory
+        construction = part.HybridBodies.Add()
+        self._try_rename(construction, "Spoke_Construction")
+        sections = self._spoke_sections(v)
+        section_refs = []
+        guide_point_refs: dict[str, list[Any]] = {"Left": [], "Right": []}
+        for index, section in enumerate(sections, start=1):
+            point_refs = []
+            for point_index, xyz in enumerate(self._spoke_section_points(section), start=1):
+                point = hsf.AddNewPointCoord(*xyz)
+                self._try_rename(point, f"Spoke_Section_{index}_Point_{point_index}")
+                construction.AppendHybridShape(point)
+                part.UpdateObject(point)
+                point_refs.append(part.CreateReferenceFromObject(point))
+
+            section_curve = hsf.AddNewSpline()
+            for point_ref in point_refs:
+                section_curve.AddPoint(point_ref)
+            section_curve.SetClosing(True)
+            self._try_rename(section_curve, f"Spoke_Section_{index}")
+            construction.AppendHybridShape(section_curve)
+            part.UpdateObject(section_curve)
+            section_refs.append(part.CreateReferenceFromObject(section_curve))
+            guide_point_refs["Left"].append(point_refs[3])
+            guide_point_refs["Right"].append(point_refs[2])
+
+        guide_refs = []
+        for label in ("Left", "Right"):
+            spline = hsf.AddNewSpline()
+            for point_ref in guide_point_refs[label]:
+                spline.AddPoint(point_ref)
+            self._try_rename(spline, f"Spoke_{label}_Guide")
+            construction.AppendHybridShape(spline)
+            part.UpdateObject(spline)
+            guide_refs.append(part.CreateReferenceFromObject(spline))
+
+        loft = hsf.AddNewLoft()
+        loft.SectionCoupling = 4
+        for section_ref in section_refs:
+            loft.AddSectionToLoft(section_ref, 1, None)
+        for guide_ref in guide_refs:
+            loft.AddGuide(guide_ref)
+        self._try_rename(loft, "Spoke_Crown_Loft")
+        construction.AppendHybridShape(loft)
+        part.UpdateObject(loft)
+
+        caps = []
+        for section_ref, name in (
+            (section_refs[0], "Spoke_Root_Cap"),
+            (section_refs[-1], "Spoke_Rim_Cap"),
+        ):
+            cap = hsf.AddNewFill()
+            cap.AddBound(section_ref)
+            self._try_rename(cap, name)
+            construction.AppendHybridShape(cap)
+            part.UpdateObject(cap)
+            caps.append(cap)
+
+        skin = hsf.AddNewJoin(
+            part.CreateReferenceFromObject(loft), part.CreateReferenceFromObject(caps[0])
+        )
+        skin.AddElement(part.CreateReferenceFromObject(caps[1]))
+        skin.SetConnex(True)
+        skin.SetManifold(1)
+        skin.SetSimplify(0)
+        skin.SetSuppressMode(0)
+        skin.SetDeviation(0.001)
+        skin.SetAngularToleranceMode(0)
+        self._try_rename(skin, "Spoke_Closed_Skin")
+        construction.AppendHybridShape(skin)
+        part.UpdateObject(skin)
+
+        part.InWorkObject = body
+        spoke = part.ShapeFactory.AddNewCloseSurface(part.CreateReferenceFromObject(skin))
+        self._try_rename(spoke, "Lofted_Spoke")
+        part.UpdateObject(spoke)
+
+        center = hsf.AddNewPointCoord(0, 0, 0)
+        axis_start = hsf.AddNewPointCoord(0, 0, -1)
+        axis_end = hsf.AddNewPointCoord(0, 0, 1)
+        for shape, name in (
+            (center, "Spoke_Pattern_Center"),
+            (axis_start, "Spoke_Pattern_Axis_Start"),
+            (axis_end, "Spoke_Pattern_Axis_End"),
+        ):
+            self._try_rename(shape, name)
+            construction.AppendHybridShape(shape)
+        axis = hsf.AddNewLinePtPt(
+            part.CreateReferenceFromObject(axis_start), part.CreateReferenceFromObject(axis_end)
+        )
+        self._try_rename(axis, "Spoke_Pattern_Axis")
+        construction.AppendHybridShape(axis)
+        part.UpdateObject(axis)
+
+        part.InWorkObject = body
+        pattern = part.ShapeFactory.AddNewCircPattern(
+            spoke,
+            1,
+            v["spoke_count"],
+            0,
+            360.0 / v["spoke_count"],
+            1,
+            1,
+            part.CreateReferenceFromObject(center),
+            part.CreateReferenceFromObject(axis),
+            False,
+            0,
+            True,
+        )
+        self._try_rename(pattern, "Lofted_Spoke_Pattern")
+        part.UpdateObject(pattern)
+
         sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
-        self._try_rename(sketch, "Hub_Spokes_Profile")
+        self._try_rename(sketch, "Hub_Profile")
         f = sketch.OpenEdition()
         f.CreateClosedCircle(0, 0, v["hub_radius"])
-        half = v["spoke_thickness"] / 2
-        for i in range(v["spoke_count"]):
-            a = 2 * math.pi * i / v["spoke_count"]
-            tangent = (-math.sin(a), math.cos(a))
-            radial = (math.cos(a), math.sin(a))
-            # r1 must be >= hub_radius: the quad's near-hub corners are offset
-            # tangentially by `half` from radius r1, so their true distance from
-            # the origin is hypot(r1, half) >= r1. Using hub_radius*0.75 (the
-            # original value) put those corners well inside the hub circle,
-            # producing a self-intersecting/overlapping sketch profile that
-            # CATIA's Pad solver rejects (UpdateObject fails with a generic
-            # COM error, no useful diagnostic). Starting exactly at hub_radius
-            # keeps the spoke flush with, not inside, the hub disk.
-            r1, r2 = v["hub_radius"], v["inner_radius"] + v["rim_thickness"] / 2
-            pts = [
-                (radial[0] * r1 + tangent[0] * half, radial[1] * r1 + tangent[1] * half),
-                (
-                    radial[0] * r2 + tangent[0] * half * 0.65,
-                    radial[1] * r2 + tangent[1] * half * 0.65,
-                ),
-                (
-                    radial[0] * r2 - tangent[0] * half * 0.65,
-                    radial[1] * r2 - tangent[1] * half * 0.65,
-                ),
-                (radial[0] * r1 - tangent[0] * half, radial[1] * r1 - tangent[1] * half),
-            ]
-            for p1, p2 in zip(pts, pts[1:] + pts[:1]):
-                f.CreateLine(*p1, *p2)
         sketch.CloseEdition()
-        web = part.ShapeFactory.AddNewPad(sketch, v["hub_thickness"])
-        self._try_rename(web, "Simple_Lofted_Spoke_Web")
-        web.IsSymmetric = True
-        part.UpdateObject(web)
-        names.append(web.Name)
+        hub = part.ShapeFactory.AddNewPad(sketch, v["hub_thickness"])
+        self._try_rename(hub, "Wheel_Hub")
+        hub.IsSymmetric = True
+        part.UpdateObject(hub)
+        names.extend([spoke.Name, pattern.Name, hub.Name])
         report["phases"].append(
             {
                 "name": "hub_and_spokes",
                 "status": "complete",
-                "feature": web.Name,
-                "note": "Tapered radial spoke precursor; apply GSD surface tools for style-specific crown surfaces.",
+                "feature": pattern.Name,
+                "note": "Three-section guided crown loft closed to a solid and circularly patterned.",
             }
         )
+        # Spoke-root styling fillets. Best-effort and non-fatal: a dress-up
+        # failure (or a wrong-edge pick from geometric selection) must never
+        # discard the built, valid solid - same policy as measurement/export.
+        if v.get("apply_spoke_fillets", True):
+            try:
+                filleted, radius, errors = self._apply_spoke_fillets(part, v)
+                if filleted:
+                    report["phases"].append(
+                        {
+                            "name": "spoke_fillets",
+                            "status": "complete",
+                            "note": f"{filleted}/{v['spoke_count']} spoke/hub-junction "
+                            f"fillets at R{radius:g} mm (tangency propagation).",
+                        }
+                    )
+                else:
+                    report["phases"].append(
+                        {"name": "spoke_fillets", "status": "skipped"}
+                    )
+                    report["warnings"].append(
+                        "Spoke-root fillets could not be applied to any junction "
+                        f"(solid is intact, unfilleted). First errors: {errors[:2]}"
+                    )
+            except Exception as exc:
+                report["warnings"].append(
+                    f"Spoke-root fillet phase failed (solid is intact): {exc}"
+                )
         # Bore and lug holes in one through pocket.
         sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
         self._try_rename(sketch, "Bore_Lugs_Profile")
@@ -271,12 +579,84 @@ class WheelTools:
         report["phases"].append(
             {"name": "mounting_features", "status": "complete", "feature": pocket.Name}
         )
+
+        valve_plane = hsf.AddNewPlaneOffset(
+            part.CreateReferenceFromObject(origin.PlaneYZ),
+            v["valve_plane_radius"],
+            False,
+        )
+        self._try_rename(valve_plane, "Valve_Hole_Plane")
+        construction.AppendHybridShape(valve_plane)
+        part.UpdateObject(valve_plane)
+
+        part.InWorkObject = body
+        sketch = body.Sketches.Add(part.CreateReferenceFromObject(valve_plane))
+        self._try_rename(sketch, "Valve_Hole_Profile")
+        f = sketch.OpenEdition()
+        f.CreateClosedCircle(
+            0,
+            v["valve_axial_position"],
+            v["valve_hole_diameter"] / 2,
+        )
+        sketch.CloseEdition()
+        valve_hole = part.ShapeFactory.AddNewPocket(sketch, v["valve_pocket_depth"])
+        self._try_rename(valve_hole, "Valve_Hole")
+        valve_hole.IsSymmetric = True
+        part.UpdateObject(valve_hole)
+        names.append(valve_hole.Name)
+        report["phases"].append(
+            {
+                "name": "valve_hole",
+                "status": "complete",
+                "feature": valve_hole.Name,
+                "note": "Radial through-hole in the flat drop-center wall.",
+            }
+        )
         part.Update()
         self.conn.refresh_display()
         report["warnings"].append(
-            "Valve drilling, back-cavity optimization, GSD crown surfaces, casting draft and final fillet selection require live topology qualification for the target CATIA release."
+            "Back-cavity optimization, casting draft and final fillet selection require live topology qualification for the target CATIA release."
         )
         return names
+
+    def _apply_spoke_fillets(
+        self, part: Any, v: dict[str, Any]
+    ) -> tuple[int, float, list[str]]:
+        """Round each spoke/hub junction with a constant-radius edge fillet.
+
+        Selects one junction edge per spoke by proximity to that spoke's
+        centerline at the hub radius, then lets CATIA's tangency propagation
+        carry the fillet around the connected junction run. Returns
+        (fillet_count, radius, errors); the caller treats any shortfall as a
+        non-fatal styling warning.
+        """
+        geo = GeometryContext(self.conn)
+        sf = part.ShapeFactory
+        radius = min(
+            v["fillet_radius"], v["rim_thickness"] * 0.5, v["spoke_thickness"] * 0.4
+        )
+        hub_radius = v["hub_radius"]
+        # The junction edges may be owned by either the hub pad or the spoke
+        # pattern depending on how CATIA assigned the shared boundary; try both.
+        candidate_features = ("Wheel_Hub", "Lofted_Spoke_Pattern")
+        filleted = 0
+        errors: list[str] = []
+        for i in range(v["spoke_count"]):
+            theta = 2 * math.pi * i / v["spoke_count"]
+            point = [hub_radius * math.cos(theta), hub_radius * math.sin(theta), 0.0]
+            for feature_name in candidate_features:
+                try:
+                    edge = geo.resolve(
+                        {"feature": feature_name, "kind": "edge", "nearest_point": point}
+                    )
+                    fillet = sf.AddNewSolidEdgeFilletWithConstantRadius(edge, 1, radius)
+                    part.UpdateObject(fillet)
+                    filleted += 1
+                    break
+                except Exception as exc:  # noqa: BLE001 - collected, non-fatal
+                    errors.append(f"spoke {i} via {feature_name}: {exc}")
+        self.conn.refresh_display()
+        return filleted, radius, errors
 
     def _save_and_export(
         self, values: dict[str, Any], report: dict[str, Any]
@@ -286,7 +666,8 @@ class WheelTools:
             return None, None
         root, ext = os.path.splitext(os.path.abspath(output))
         part_path = output if ext.lower() == ".catpart" else root + ".CATPart"
-        os.makedirs(os.path.dirname(part_path), exist_ok=True)
+        part_path = normalize_catia_path(part_path)
+        self._ensure_output_path_is_not_already_open(part_path)
         self.conn.active_document.SaveAs(part_path)
         step_path = None
         if values.get("export_step", True):
@@ -303,6 +684,21 @@ class WheelTools:
                     f"STEP export failed (CATPart was saved successfully): {exc}"
                 )
         return part_path, step_path
+
+    def _ensure_output_path_is_not_already_open(self, part_path: str) -> None:
+        """Fail fast before CATIA can raise a blocking SaveAs modal dialog."""
+        active = self.conn.active_document
+        target = os.path.normcase(os.path.abspath(part_path))
+        for index in range(1, self.conn.documents.Count + 1):
+            doc = self.conn.documents.Item(index)
+            if doc is active:
+                continue
+            full_name = getattr(doc, "FullName", "") or ""
+            if full_name and os.path.normcase(os.path.abspath(full_name)) == target:
+                raise ValueError(
+                    f"Output path is already open in CATIA: {part_path}. "
+                    "Close that document or choose a different output_path."
+                )
 
     def _measure(self, density: float) -> dict[str, Any]:
         part = self.conn.get_active_part()

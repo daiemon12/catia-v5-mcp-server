@@ -246,6 +246,20 @@ class CATIAConnection:
         return self.app.ActiveEditor
 
     @property
+    def active_viewer(self) -> Any:
+        """Get the active 3D viewer, tolerating CATIA seats without ActiveEditor."""
+        self.ensure_connected()
+        try:
+            return self.active_editor.ActiveViewer
+        except Exception:
+            try:
+                return self.app.ActiveWindow.ActiveViewer
+            except Exception as exc:
+                raise RuntimeError(
+                    "No active CATIA viewer available for view or screenshot operations."
+                ) from exc
+
+    @property
     def hso(self) -> Any:
         """Get the Highlighted Set of Objects (selection)."""
         self.ensure_connected()
@@ -254,7 +268,7 @@ class CATIAConnection:
     def refresh_display(self) -> None:
         """Refresh the CATIA 3D view."""
         try:
-            self.active_editor.ActiveViewer.Reframe()
+            self.active_viewer.Reframe()
         except Exception:
             pass
 

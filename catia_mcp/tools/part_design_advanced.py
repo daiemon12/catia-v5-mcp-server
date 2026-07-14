@@ -98,12 +98,32 @@ class AdvancedPartDesignTools:
             ),
             self._d(
                 "catia_advanced_draft",
-                "Apply casting draft using a neutral/parting element.",
+                "Apply casting draft to a face, keeping a neutral reference face fixed.",
                 {
                     "faces": {"type": "array", "items": REF_SCHEMA, "minItems": 1},
+                    "neutral": REF_SCHEMA,
                     "parting": REF_SCHEMA,
-                    "pull_direction": REF_SCHEMA,
+                    "pull_direction": {
+                        "oneOf": [
+                            {"type": "string", "enum": ["xy", "yz", "zx"]},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "x": {"type": "number"},
+                                    "y": {"type": "number"},
+                                    "z": {"type": "number"},
+                                },
+                                "required": ["x", "y", "z"],
+                                "additionalProperties": False,
+                            },
+                        ]
+                    },
                     "angle": {"type": "number", "minimum": -89, "maximum": 89},
+                    "propagation": {
+                        "type": "string",
+                        "enum": ["none", "smooth"],
+                        "default": "none",
+                    },
                     "mode": {
                         "type": "string",
                         "enum": ["standard", "reflect_line"],
@@ -111,9 +131,21 @@ class AdvancedPartDesignTools:
                     },
                     "name": {"type": "string"},
                 },
-                ["faces", "parting", "pull_direction", "angle"],
+                ["faces", "neutral", "pull_direction", "angle"],
             ),
         ]
+
+    # Plane-normal shorthand for the draft pull (mold-extraction) direction.
+    _PULL_NORMALS = {"xy": (0.0, 0.0, 1.0), "yz": (1.0, 0.0, 0.0), "zx": (0.0, 1.0, 0.0)}
+
+    @classmethod
+    def _pull_vector(cls, spec: Any) -> tuple[float, float, float]:
+        """Resolve a draft pull direction into raw (x, y, z) doubles."""
+        if isinstance(spec, dict) and {"x", "y", "z"} <= spec.keys():
+            return float(spec["x"]), float(spec["y"]), float(spec["z"])
+        if isinstance(spec, str) and spec.lower() in cls._PULL_NORMALS:
+            return cls._PULL_NORMALS[spec.lower()]
+        raise ValueError("pull_direction must be 'xy'/'yz'/'zx' or {'x':, 'y':, 'z':}")
 
     def _d(
         self, name: str, description: str, props: dict[str, Any], required: list[str]
@@ -125,6 +157,8 @@ class AdvancedPartDesignTools:
         }
 
     def execute(self, tool_name: str, args: dict[str, Any]) -> str:
+        part = self.geo.part
+        part.InWorkObject = self.conn.get_active_part_body()
         sf, r = self.conn.shape_factory, self.geo.resolve
         if tool_name == "catia_close_surface":
             feature = sf.AddNewCloseSurface(r(args["surface"]))
@@ -141,9 +175,18 @@ class AdvancedPartDesignTools:
                 r(args["surface"]), 0 if args.get("side", "add") == "add" else 1
             )
         elif tool_name == "catia_variable_fillet":
-            feature = sf.AddNewSolidEdgeFilletWithVariableRadius(r(args["edge"]), 1, args["radius"])
+            # CATIA's method is AddNewSolidEdgeFilletWithVaryingRadius (not
+            # "...VariableRadius") and takes 4 args: edge, propagation mode,
+            # variation mode, default radius. The 3-arg "...VariableRadius" name
+            # does not resolve on this install (verified live 2026-07-14). Per-
+            # vertex radii are set with AddImposedVertex, not
+            # AddRadiusVariationAtVertex. 1 = catTangencyFilletEdgePropagation,
+            # 1 = catCubicFilletVariation.
+            feature = sf.AddNewSolidEdgeFilletWithVaryingRadius(
+                r(args["edge"]), 1, 1, args["radius"]
+            )
             for variation in args.get("variations", []):
-                feature.AddRadiusVariationAtVertex(r(variation["vertex"]), variation["radius"])
+                feature.AddImposedVertex(r(variation["vertex"]), variation["radius"])
         elif tool_name == "catia_face_fillet":
             feature = sf.AddNewSolidFaceFillet(
                 r(args["face1"]), r(args["face2"]), 1, args["radius"]
@@ -153,14 +196,31 @@ class AdvancedPartDesignTools:
                 r(args["face1"]), r(args["face2"]), r(args["removed_face"]), args["radius"]
             )
         elif tool_name == "catia_advanced_draft":
+            # AddNewDraft's real signature is 10 args:
+            #   (face, neutral, neutralMode, parting, dirX, dirY, dirZ,
+            #    mode, angle, multiselectionMode)
+            # The pull direction is a vector (three doubles), NOT a reference -
+            # passing a reference is why the old 6-arg call failed with
+            # "Member not found" (verified live 2026-07-14). Enum values:
+            # neutralMode 0=None/1=Smooth, mode 0=Standard/1=ReflectKeepFace,
+            # multiselection 0=None.
             faces = args["faces"]
+            dir_x, dir_y, dir_z = self._pull_vector(args["pull_direction"])
+            neutral_mode = 1 if args.get("propagation") == "smooth" else 0
+            draft_mode = 1 if args.get("mode") == "reflect_line" else 0
+            parting = args.get("parting", args["neutral"])
             feature = sf.AddNewDraft(
-                r(faces[0]), r(args["pull_direction"]), r(args["parting"]), args["angle"], 1, False
+                r(faces[0]),
+                r(args["neutral"]),
+                neutral_mode,
+                r(parting),
+                dir_x,
+                dir_y,
+                dir_z,
+                draft_mode,
+                args["angle"],
+                0,
             )
-            for face in faces[1:]:
-                feature.AddFaceToDraft(r(face))
-            if args.get("mode") == "reflect_line":
-                feature.DraftMode = 1
         else:
             raise ValueError(f"Unknown advanced Part Design tool: {tool_name}")
         if args.get("name"):

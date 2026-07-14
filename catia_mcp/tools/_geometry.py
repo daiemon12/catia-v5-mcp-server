@@ -21,6 +21,11 @@ def result(**values: Any) -> str:
     return json.dumps(values, indent=2, ensure_ascii=False)
 
 
+def set_revolution_angle(feature: Any, angle_degrees: float) -> None:
+    """Set a Shaft/Groove angle through its read-only Angle parameter."""
+    feature.FirstAngle.ValuateFromString(f"{angle_degrees}deg")
+
+
 def byref_doubles(n: int) -> VARIANT:
     """A ByRef SAFEARRAY (VT_BYREF|VT_ARRAY|VT_VARIANT) for CATIA methods
     that fill an array output argument. Read the result back from the
@@ -101,6 +106,14 @@ class GeometryContext:
         if not matches:
             raise RuntimeError(f"No {kind} sub-elements found on '{name}'")
         chosen = self._choose_subelement(matches, spec)
+        # Prefer the live SelectedElement.Reference captured during the search:
+        # it is the same reference object that makes selection work, and unlike
+        # CreateReferenceFromName(DisplayName) it stays solver-valid - a fillet
+        # built from the rebuilt-by-name reference is accepted by AddNew* but
+        # then fails at UpdateObject with E_FAIL (verified live 2026-07-14).
+        ref = chosen.get("reference")
+        if ref is not None:
+            return ref
         if chosen.get("brep_name"):
             return self.part.CreateReferenceFromName(chosen["brep_name"])
         return self.part.CreateReferenceFromObject(chosen["object"])
@@ -174,9 +187,23 @@ class GeometryContext:
             selection.Search(f"{query},sel")
             values = []
             for index in range(1, selection.Count + 1):
-                item = selection.Item(index).Value
+                selected = selection.Item(index)
+                item = selected.Value
                 name = getattr(item, "Name", f"{kind}.{index}")
-                ref = self.part.CreateReferenceFromObject(item)
+                # A SelectedElement from a "Topology.*,sel" search already carries
+                # a BRep Reference; use it directly. CreateReferenceFromObject on
+                # the raw topological Value fails on this CATIA install with
+                # E_INVALIDARG (0x80070057, "The method CreateReferenceFromObject
+                # failed") - verified live 2026-07-14, and it took the whole
+                # edge/face selection subsystem (fillet, draft, geometric-query
+                # selection) down with it. Fall back to the old path only if the
+                # Reference property is unavailable.
+                try:
+                    ref = selected.Reference
+                except Exception:
+                    ref = None
+                if ref is None:
+                    ref = self.part.CreateReferenceFromObject(item)
                 brep = getattr(ref, "DisplayName", None)
                 values.append(
                     {
