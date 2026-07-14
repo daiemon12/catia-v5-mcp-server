@@ -69,6 +69,28 @@ Or manually:
 pip install mcp pywin32 pycatia
 ```
 
+**Windows: running this via a PowerShell script.** If you wrap the steps above in a
+`.ps1` script (for example an offline installer that copies the repo and a local wheel
+cache onto a machine with no internet access), running it directly may fail with:
+
+```
+File ...\install.ps1 cannot be loaded because running scripts is disabled on this system.
+```
+
+Don't change the system-wide execution policy to fix this. Instead bypass it for just
+that one run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Also run it from a **normal, non-elevated** PowerShell window — not "Run as
+Administrator". This isn't just a permissions nicety: as noted below, CATIA's COM
+object is only visible to processes in the same interactive logon session *and*
+integrity level. An elevated process, even under the same account in the same
+session, frequently can't see a non-elevated CATIA instance — the same failure mode
+as running the server from a scheduled task.
+
 ### 3. Configure Claude Desktop
 
 Edit your Claude Desktop config file:
