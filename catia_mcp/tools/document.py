@@ -9,6 +9,7 @@ import json
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.paths import normalize_catia_path
 
 
 class DocumentTools:
@@ -178,12 +179,16 @@ class DocumentTools:
     def _open_document(self, file_path: str) -> str:
         self.conn.ensure_connected()
         docs = self.conn.documents
+        file_path = normalize_catia_path(file_path)
         doc = docs.Open(file_path)
         return f"Opened document: '{doc.Name}' from {file_path}"
 
     def _save_document(self, file_path: str | None = None) -> str:
         doc = self.conn.active_document
         if file_path:
+            # CATIA rejects forward-slash paths ("invalid file name" dialog) and
+            # won't create missing directories — normalize before SaveAs.
+            file_path = normalize_catia_path(file_path)
             doc.SaveAs(file_path)
             return f"Document saved as: {file_path}"
         else:

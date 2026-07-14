@@ -11,6 +11,7 @@ import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.paths import normalize_catia_path
 
 # CATIA export format identifiers
 FORMAT_MAP = {
@@ -155,10 +156,9 @@ class ExportTools:
                 f"Unsupported export format: '{fmt}'. Supported: {supported}"
             )
 
-        # Ensure output directory exists
-        output_dir = os.path.dirname(file_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
+        # Normalize to a Windows path (CATIA rejects forward-slash paths with an
+        # "invalid file name" dialog) and ensure the output directory exists.
+        file_path = normalize_catia_path(file_path)
 
         # CATIA V5 export via SaveAs with format specification
         doc.ExportData(file_path, FORMAT_MAP[fmt_key])
@@ -178,10 +178,9 @@ class ExportTools:
     def _screenshot(self, file_path: str, width: int = 1920, height: int = 1080) -> str:
         self.conn.ensure_connected()
 
-        # Ensure output directory exists
-        output_dir = os.path.dirname(file_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
+        # Normalize to a Windows path (forward slashes are rejected) and ensure
+        # the output directory exists.
+        file_path = normalize_catia_path(file_path)
 
         # Capture via the active viewer
         viewer = self.conn.active_editor.ActiveViewer
