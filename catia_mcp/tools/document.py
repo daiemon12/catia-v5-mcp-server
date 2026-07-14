@@ -6,6 +6,7 @@ Create, open, save, close, and list documents (Part, Product, Drawing).
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
@@ -180,6 +181,20 @@ class DocumentTools:
         self.conn.ensure_connected()
         docs = self.conn.documents
         file_path = normalize_catia_path(file_path)
+        # Calling Documents.Open on a document that is already open raises a
+        # blocking modal dialog that hangs the automation call until someone
+        # dismisses it on the CATIA desktop. If the target is already open,
+        # reuse and activate it instead of reopening.
+        target = os.path.normcase(os.path.abspath(file_path))
+        for index in range(1, docs.Count + 1):
+            existing = docs.Item(index)
+            full_name = getattr(existing, "FullName", "") or ""
+            if full_name and os.path.normcase(os.path.abspath(full_name)) == target:
+                try:
+                    existing.Activate()
+                except Exception:
+                    pass
+                return f"Document already open; reused: '{existing.Name}' from {file_path}"
         doc = docs.Open(file_path)
         return f"Opened document: '{doc.Name}' from {file_path}"
 
