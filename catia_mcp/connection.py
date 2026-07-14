@@ -46,6 +46,11 @@ class CATIAConnection:
         self._initialized_com = False
         self._impersonating = False
         self.active_geoset_name: str | None = None
+        # Name of the most recently created sketch. Part Design features (pad,
+        # pocket, hole, shaft) default to this so they don't mis-resolve "the
+        # last sketch" once earlier sketches get absorbed into features and the
+        # body.Sketches collection ordering no longer reflects creation order.
+        self.active_sketch_name: str | None = None
 
     @property
     def is_connected(self) -> bool:

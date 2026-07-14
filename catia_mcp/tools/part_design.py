@@ -419,7 +419,18 @@ class PartDesignTools:
         if sketch_name:
             return sketches.Item(sketch_name)
 
-        # Get the last sketch
+        # Prefer the sketch the sketcher most recently created. Sketches.Item(Count)
+        # is unreliable: once a sketch is absorbed into a feature, the collection's
+        # index order no longer matches creation order, so Item(Count) can return
+        # an earlier sketch (observed: a hub pad silently reused the web sketch).
+        tracked = getattr(self.conn, "active_sketch_name", None)
+        if tracked:
+            try:
+                return sketches.Item(tracked)
+            except Exception:
+                pass  # fall through if it was consumed/renamed
+
+        # Fallback: last sketch by collection index.
         if sketches.Count == 0:
             raise RuntimeError("No sketches found in the active body. Create a sketch first.")
         return sketches.Item(sketches.Count)
