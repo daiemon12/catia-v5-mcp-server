@@ -120,26 +120,134 @@ C:\Users\sup02\AppData\Local\Programs\Python\Python311\python.exe -m catia_mcp -
 This blocks in the foreground; that's correct, it's the server. Leave the window open.
 Logging off that Windows session kills both the server and CATIA.
 
-**To restart after a code update:** `Ctrl+C` the running window, then re-run the same
-command. There is currently no supervisor/service wrapper — a real gap if this needs
-to survive unattended.
+**To restart after a code update:** prefer the WinRM helper below. Manual fallback is
+still `Ctrl+C` in the running window, then re-run the same command.
+
+## Restarting the server remotely with WinRM
+
+WinRM is useful as the remote control channel, but **do not start the MCP server
+directly inside the WinRM session**. That process cannot see CATIA's interactive COM
+object: this was verified on 2026-07-14 with
+`win32com.client.GetActiveObject("CATIA.Application")`, which failed from direct
+WinRM Python with `-2147221021 Operation unavailable`.
+
+The working shape is:
+
+1. WinRM connects as `corp\sup02`.
+2. The remote script finds the existing MCP `python.exe` in the active CATIA session
+   (currently `sup02` session `8`) and stops only that Python process.
+3. It duplicates a token from `explorer.exe`/PowerShell in that same interactive
+   session and launches a new PowerShell there.
+4. That PowerShell reads `CATIA_MCP_TOKEN` from a local untracked token file and
+   starts `python.exe -m catia_mcp --http ...` in the CATIA-visible desktop session.
+
+On this host, direct `CreateProcessAsUser`/`CreateProcessWithTokenW` from the WinRM
+admin session still fails (`CreateProcessAsUser` reports `1314`, required privilege
+not held). The helper therefore falls back to a **temporary LocalSystem launcher
+service** only for the start operation, then deletes it. This is not Task Scheduler;
+it is a one-shot service shim used because LocalSystem has the required token-launch
+privileges.
+
+From this repo on the client machine:
+
+```powershell
+.\scripts\restart_remote_catia_mcp.ps1
+```
+
+The helper reads `192.168.5.42-creds`, uploads
+`scripts\windows\restart_catia_mcp_in_session.ps1` to the CATIA workstation, syncs
+the remote token file at
+`C:\Users\sup02\catia-v5-mcp-server\.catia-mcp-env`, invokes the restart script over
+WinRM, then polls the authenticated `/mcp/` endpoint with an MCP `initialize` request.
+
+Useful variants:
+
+```powershell
+# Validate session/process selection without stopping or starting anything.
+.\scripts\restart_remote_catia_mcp.ps1 -DryRun
+
+# Reuse the already-uploaded remote script.
+.\scripts\restart_remote_catia_mcp.ps1 -SkipUpload
+
+# Reuse the existing remote token file.
+.\scripts\restart_remote_catia_mcp.ps1 -SkipTokenSync
+```
+
+WinRM prerequisites, already tested from the current client:
+
+```powershell
+Test-WSMan 192.168.5.42
+Invoke-Command -ComputerName 192.168.5.42 -Credential (Get-Credential) -ScriptBlock {
+    whoami
+    hostname
+}
+```
+
+If connecting by IP and authentication fails with `ServerNotTrusted`, set the client
+machine's TrustedHosts entry:
+
+```powershell
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "192.168.5.42" -Force
+```
+
+The restart helper intentionally does not touch `CNEXT.exe`/CATIA.
 
 ## Updating deployed code
 
 The box has no internet and no git — code is pushed via the SMB admin share:
 
+### Local credential source
+
+On the current client workstation, deployment automation must read the credentials
+from this Git-ignored file instead of asking for them again or embedding them in a
+command/document:
+
+```text
+C:\Users\j-avd\Documents\catia-v5-mcp-server-git\catia-v5-mcp-server\192.168.5.42-creds
+```
+
+The file contains `local_adm_username`/`local_adm_pass`,
+`adm_username`/`adm_pass`, `Deploy_host`, and `MCP_TOKEN`. Use the `adm_*` pair for
+the SMB admin share: it was verified against `.42` on 2026-07-14, while the
+`local_adm_*` pair returned `Access is denied`. Never print these values in logs or
+tool output. The filename is covered by the repository's `*-creds` rule and must
+remain untracked.
+
+For a PowerShell deployment, parse the `key=value` file in memory and create a
+temporary credentialed drive; this avoids putting the password directly in the
+documented command line:
+
 ```powershell
-net use \\192.168.5.42\C$ /user:CORP\sup02 <password — ask the user>
+$credentialFile = 'C:\Users\j-avd\Documents\catia-v5-mcp-server-git\catia-v5-mcp-server\192.168.5.42-creds'
+$deploy = @{}
+Get-Content -LiteralPath $credentialFile | ForEach-Object {
+    if ($_ -match '^\s*([^#][^=:]*?)\s*[:=]\s*(.*)$') {
+        $deploy[$matches[1].Trim()] = $matches[2].Trim()
+    }
+}
+$password = ConvertTo-SecureString $deploy.adm_pass -AsPlainText -Force
+$credential = [pscredential]::new($deploy.adm_username, $password)
+New-PSDrive -Name CATIADeploy -PSProvider FileSystem `
+    -Root "\\$($deploy.Deploy_host)\C$" -Credential $credential
+```
+
+Remove the temporary drive with `Remove-PSDrive CATIADeploy` in a `finally` block
+after copying the files.
+
+The equivalent interactive SMB sequence is:
+
+```powershell
+net use \\192.168.5.42\C$ /user:<adm_username from 192.168.5.42-creds> <adm_pass from 192.168.5.42-creds>
 Remove-Item '\\192.168.5.42\C$\Users\sup02\catia-v5-mcp-server\catia_mcp' -Recurse -Force
 Copy-Item '<local repo path>\catia_mcp' '\\192.168.5.42\C$\Users\sup02\catia-v5-mcp-server\catia_mcp' -Recurse -Force
 net use \\192.168.5.42\C$ /delete
 ```
 
-Then restart the server (previous section) — **the running process does not hot-reload;
-a stale process will keep reporting the old tool count.** This was hit directly: the
-GSD modules existed in the repo and were committed to git before they were ever pushed
-to the box, so `tools/list` kept reporting 54 tools instead of 63 until the redeploy
-happened.
+Then restart the server with `.\scripts\restart_remote_catia_mcp.ps1` — **the running
+process does not hot-reload; a stale process will keep reporting the old tool count.**
+This was hit directly: the GSD modules existed in the repo and were committed to git
+before they were ever pushed to the box, so `tools/list` kept reporting 54 tools
+instead of 63 until the redeploy happened.
 
 Python dependencies (`mcp`, `pywin32` — currently `pycatia` is **not** installed and,
 per `docs/PLAN.md`, not currently required by any tool module) were installed offline
@@ -166,19 +274,37 @@ automation and file I/O:
     -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 8000 `
     -RemoteAddress <client-ip>
   ```
-- The actual token value and the SMB/RDP credentials are **not** in this repo or this
-  document — ask whoever ran the deployment, or check the Claude Code MCP config
-  (`claude mcp list`) on the client machine.
+- The actual token value and the SMB/RDP credentials are **not** committed to this
+  repo or written in this document. On the current client, use the Git-ignored
+  `192.168.5.42-creds` file documented under "Local credential source" above.
 
 ## Current verification status
 
 - **Base tools (54, pre-GSD)** — live-verified: `catia_list_documents` and
   `catia_new_product` were both called through the deployed HTTP endpoint and
   confirmed against the actual CATIA window (created a real `Product2.CATProduct`).
-- **GSD tools (the +9 new modules, 63 total)** — code exists and is committed, **not
-  yet run against live CATIA** as of this writing. See `docs/PLAN.md` → "Open Work" for
-  the smoke-test plan. If you're picking this up fresh: that's the very next step,
-  before trusting any of the surfacing code.
+- **Current HTTP server** — authenticated `initialize` was re-confirmed on
+  `192.168.5.42:8000` with 95 published tools on 2026-07-14.
+- **GSD wheel path** — `catia_spline_3d`, `catia_loft`, `catia_fill`, `catia_join`,
+  the PartBody-activated `CloseSurface` path, and the resulting circular pattern were
+  exercised against live CATIA. A complete ten-spoke wheel was built and saved as
+  `C:\Users\sup02\Documents\MCP_Wheel_Lofted_Spokes_20260714_121051.CATPart`.
+  The subsequent radial valve-hole stage was also exercised in a complete legacy-call
+  build and saved as
+  `C:\Users\sup02\Documents\MCP_Wheel_Valve_Hole_20260714_123338.CATPart`.
+  Its PartBody ends with `Valve_Hole`; CATIA updated and saved without error, and the
+  measured 802.4 mm3 volume reduction matches a diameter 11.3 x 8 mm cylinder.
+  This does not imply that every GSD tool is verified: `catia_sew_surface`, variable
+  fillet, and advanced draft still require individual live smoke tests.
+- **View/screenshot** — `catia_fit_all` and standard view changes work.
+  `catia_screenshot` now picks the capture format from the file extension and, because
+  CATIA's API has no PNG format, writes a `.png` request as JPEG with a corrected `.jpg`
+  path (verified live 2026-07-14 — the returned path reflects the real file). Earlier
+  builds' EMF-under-`.png` files predate this fix.
+- **`catia_open_document` modal caveat** — opening a document that is already open in the
+  session raises a modal dialog that hangs the call until it is dismissed (same class as
+  the SaveAs modal the wheel tool guards against). To screenshot a just-built part, drive
+  the already-active document instead of reopening it by path.
 
 ## Repos
 

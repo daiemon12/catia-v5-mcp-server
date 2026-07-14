@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.tools._geometry import GeometryContext, REF_SCHEMA, set_revolution_angle
 
 
 class PartDesignTools:
@@ -17,6 +18,7 @@ class PartDesignTools:
 
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
+        self.geo = GeometryContext(connection)
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         return [
@@ -67,9 +69,19 @@ class PartDesignTools:
                         },
                         "direction": {
                             "type": "string",
-                            "description": "Cut direction: 'normal' (default), 'reverse'",
-                            "enum": ["normal", "reverse"],
+                            "description": (
+                                "Cut direction: 'normal', 'reverse', or 'both' "
+                                "(symmetric — cuts depth on each side of the sketch "
+                                "plane; use for through-holes when unsure which side "
+                                "the material is on)."
+                            ),
+                            "enum": ["normal", "reverse", "both"],
                             "default": "normal",
+                        },
+                        "symmetric": {
+                            "type": "boolean",
+                            "description": "Cut equally on both sides of the sketch plane (same as direction='both').",
+                            "default": False,
                         },
                         "sketch_name": {
                             "type": "string",
@@ -142,6 +154,7 @@ class PartDesignTools:
                                 "Use catia_list_edges to find edge names."
                             ),
                         },
+                        "edge": REF_SCHEMA,
                     },
                     "required": ["radius"],
                 },
@@ -479,15 +492,24 @@ class PartDesignTools:
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         depth = args["depth"]
+        direction = args.get("direction", "normal")
+        symmetric = args.get("symmetric", False) or direction == "both"
 
         pocket = sf.AddNewPocket(sketch, depth)
 
-        if args.get("direction") == "reverse":
+        # AddNewPocket's default cut direction is the sketch's negative normal;
+        # when material sits on the positive-normal side, a one-directional cut
+        # removes nothing. A symmetric pocket cuts `depth` on both sides, so a
+        # through-feature always intersects the solid regardless of pad side.
+        if symmetric:
+            pocket.IsSymmetric = True
+        elif direction == "reverse":
             pocket.DirectionOrientation = 1
 
         part.UpdateObject(pocket)
         self.conn.refresh_display()
-        return f"Pocket created: {depth} mm deep. Feature: '{pocket.Name}'"
+        mode = "symmetric" if symmetric else direction
+        return f"Pocket created: {depth} mm deep ({mode}). Feature: '{pocket.Name}'"
 
     def _shaft(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -499,7 +521,7 @@ class PartDesignTools:
         angle = args.get("angle", 360)
 
         shaft = sf.AddNewShaft(sketch)
-        shaft.FirstAngle = angle
+        set_revolution_angle(shaft, angle)
 
         part.UpdateObject(shaft)
         self.conn.refresh_display()
@@ -515,7 +537,7 @@ class PartDesignTools:
         angle = args.get("angle", 360)
 
         groove = sf.AddNewGroove(sketch)
-        groove.FirstAngle = angle
+        set_revolution_angle(groove, angle)
 
         part.UpdateObject(groove)
         self.conn.refresh_display()
@@ -524,13 +546,27 @@ class PartDesignTools:
     def _fillet(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
-        body = self.conn.get_active_part_body()
         sf = part.ShapeFactory
 
         radius = args["radius"]
 
+        # AddNewSolidEdgeFilletWithConstantRadius needs an actual edge
+        # Reference (TriDimFeatEdge), not a whole feature/body - passing the
+        # last shape fails with E_FAIL on this install (verified live
+        # 2026-07-14). Resolve a real edge from the `edge` selection spec;
+        # tangency propagation (mode 1) still rounds the tangent-connected run.
+        edge_spec = args.get("edge")
+        if edge_spec is None:
+            raise ValueError(
+                "catia_fillet requires an `edge` reference (e.g. "
+                "{'feature': 'Pad.1', 'kind': 'edge', 'index': 1} or a "
+                "nearest_point/brep_name). Filleting a whole feature is not "
+                "supported by CATIA's constant-radius fillet."
+            )
+        edge_ref = self.geo.resolve(edge_spec)
+
         fillet = sf.AddNewSolidEdgeFilletWithConstantRadius(
-            self._get_last_shape(),
+            edge_ref,
             1,       # catTangencyFilletEdgePropagation
             radius,
         )

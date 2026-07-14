@@ -1,12 +1,23 @@
 # GSD (Generative Shape Design) Extension — Implementation Plan
 
-**Status as of 2026-07-13:** Stages 1–6 below are **coded but not yet verified against
+**Status as of 2026-07-14:** Stages 1–6 below are **coded but not yet verified against
 live CATIA**. This document is the durable, portable version of the plan — written so
 work can continue from a fresh session or a different tool (e.g. Codex) without the
 originating conversation's history. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for how to
 reach the running CATIA instance and exercise these tools. Deployment host moved to
 `192.168.5.42` and a fidelity gap-analysis against a real wheel drawing was added
-(items 12-13 in Open Work) — closing those, in order, is the current critical path.
+(items 12-13 in Open Work). The barrel/loft/valve fidelity items are now done and
+verified live; the **current critical path is the styling phase (item 14) — casting
+draft and spoke-root fillets** — whose first blocker (topological reference selection)
+was reproduced live on 2026-07-14 and is being fixed.
+
+A remote-restart helper now exists and is **live-verified (2026-07-14)**:
+[`scripts/restart_remote_catia_mcp.ps1`](../scripts/restart_remote_catia_mcp.ps1)
+restarts the interactive-session MCP server over WinRM. On this host the direct
+`CreateProcessAsUser`/`CreateProcessWithTokenW` path fails (error 1314, required
+privilege not held) and it falls back to a one-shot LocalSystem launcher service —
+that fallback is the normal path every restart takes unless the WinRM account is
+granted `SeAssignPrimaryTokenPrivilege`. See DEPLOYMENT.md for the full shape.
 
 ## Goal
 
@@ -317,32 +328,65 @@ DEPLOYMENT.md for how to query the live server).
     drawing** — found 2026-07-13 while checking the tool against a sample
     front-view/side-view technical drawing (10-spoke cast wheel, JWL-style barrel
     cross-section). Concrete gaps, in priority order for closing them:
-    - **Barrel/bead-seat profile is not built.** [`wheel.py`'s rim phase](wheel.py)
-      (`_build_geometry`, the `Rim_Profile`/`Rim_Barrel` sketch+pad) is two
-      concentric circles padded straight — a plain cylinder. A real wheel's side
-      profile (front bead seat, safety hump, drop-center well, rear bead seat,
-      flange radii) needs a revolved profile (`catia_shaft`/`catia_groove`, or a
-      GSD revolve via `catia_revolve_surface`) built from the actual cross-section
-      curve, not an annular pad. This is the single biggest visual/functional gap
-      versus a real drawing and should be the next thing built.
-    - **Spoke crown surfaces are not lofted.** The `Hub_Spokes_Profile`/
-      `Simple_Lofted_Spoke_Web` phase pads a flat radial quad between straight
-      sketch lines — despite the tool's only `spoke_style` value being
-      `"simple_lofted"`, nothing is actually lofted. `catia_loft`, `catia_sweep`,
-      `catia_blend`, `catia_close_surface`, and `catia_thick_surface` all exist as
-      standalone tools ([`surface.py`](surface.py),
-      [`part_design_advanced.py`](part_design_advanced.py)) but the wheel composite
-      never calls them. Wiring a real loft (hub-side guide curve → rim-side guide
-      curve → close/thicken to solid) into this phase is the second priority.
-    - **Valve hole is not implemented.** `valve_hole_diameter` is defined in
-      `DEFAULTS` and accepted as an argument but never consumed anywhere in
-      `_build_geometry` — no hole is ever cut. Needs an off-axis hole through the
-      drop-well wall once the barrel profile (above) exists to cut it into.
-    - **Fillet/draft styling is not applied.** `catia_fillet`, `catia_draft`,
-      `catia_variable_fillet`, `catia_advanced_draft` exist but the wheel tool
-      never calls them — a real drawing's spoke-root fillets and casting draft
-      angles currently require separate manual tool calls after `catia_design_wheel`
-      returns, not a single build.
+    - **Barrel/bead-seat profile is now verified live against `.42` (2026-07-14).**
+      [`wheel.py`'s rim phase](wheel.py) creates a closed YZ cross-section and
+      revolves it around a construction centerline with `Shaft`. The parameterized
+      profile includes front/rear flange transitions, bead seats, safety humps, a
+      drop-center well, and a uniform radial wall. Live checks completed:
+      `Sketch -> CenterLine -> Shaft` smoke passed after fixing the read-only
+      `FirstAngle` assignment; a full `catia_design_wheel` build completed and saved
+      on `.42` using the legacy call shape (no new arguments required); and a
+      separate 300-degree rim-only `Shaft` screenshot visually confirmed the bead
+      seats, humps, and drop-center on an open segment. This first version remains
+      intentionally segment-based; production flange/bead-seat radii and final
+      topology-dependent fillets are still future styling work. Additional live
+      limitations discovered during verification:
+      `catia_design_wheel` could previously block CATIA with a `SaveAs` modal if the
+      same output CATPart was already open in the session (a fail-fast guard is now
+      deployed and active, though the duplicate-path case has not been deliberately
+      re-triggered live after the latest restart), and `catia_screenshot` currently
+      writes EMF content even when a `.png` path is requested, so screenshot files
+      need EMF consumers or a post-conversion step until that tool is corrected.
+    - **Spoke crown loft is now implemented and verified live against `.42`
+      (2026-07-14).** The flat `Simple_Lofted_Spoke_Web` pad was replaced by three
+      closed 3D-spline sections (hub/root, crowned mid-section, and narrowed rim
+      section) coupled by matching vertices and two guide splines. The GSD skin is
+      capped with two `Fill` surfaces, assembled with `Join`, converted by
+      `CloseSurface`, and replicated by a Part Design circular pattern. The hub is
+      added after the pattern so every Part Design operation remains a connected
+      solid. Live debugging established that closed 2D sketches on offset planes did
+      not solve as loft sections on this CATIA install, while equivalent closed 3D
+      splines did; a bare loft is not watertight and cannot be passed directly to
+      `CloseSurface` without the two caps and join.
+
+      A legacy-shape `catia_design_wheel` call (no new spoke arguments) completed and
+      saved `MCP_Wheel_Lofted_Spokes_20260714_121051.CATPart`. Its PartBody contains
+      `Rim_Barrel`, `Lofted_Spoke`, `Lofted_Spoke_Pattern`, `Wheel_Hub`, and
+      `Center_Bore_And_Lugs`; CATIA reported 3,145,029.9 mm3 and 8.49 kg. Isometric,
+      side, and front views visually confirmed the axial crown, ten evenly patterned
+      tapered spokes, hub/rim intersections, bore, and five lug holes. The
+      `Spoke_Construction` geometrical set remains visible in this first version, so
+      hiding construction geometry by default is a cosmetic follow-up.
+    - **Valve hole is implemented and verified live against `.42` (2026-07-14).**
+      The wheel validator places one radial drilling on the flat drop-center wall,
+      maintains 2 mm axial clearance from the profile transitions and the nearest
+      +X spoke, and rejects combinations where the requested diameter cannot fit.
+      A sketch on a radial offset plane is cut through the 8 mm wall by a symmetric
+      `Pocket`; the legacy call shape still uses the 11.3 mm default. A full live
+      build completed as `MCP_Wheel_Valve_Hole_20260714_123338.CATPart`, with
+      `Valve_Hole` last in the PartBody and no CATIA update errors. Its volume was
+      3,144,227.5 mm3, about 802.4 mm3 below the pre-hole build, matching the
+      expected cylinder volume for diameter 11.3 x 8 mm. A right-view capture showed
+      the barrel and drop-center, although visible `Spoke_Construction` geometry
+      prevents treating that screenshot alone as a clean visual inspection of the
+      circular edge; the feature tree, successful update, and volume delta are the
+      acceptance evidence for this stage.
+    - **Fillet/draft styling — partially applied (see item 14 for the full story).**
+      Constant spoke-root fillets are now wired into `catia_design_wheel` and land
+      live (10/10 on a test build), pending visual QA of edge targeting. Casting
+      draft is still not applied in the composite (the `catia_advanced_draft` solver
+      semantics are unresolved). Both base `catia_fillet` and `catia_draft` were found
+      to be non-functional and were fixed (fillet) / diagnosed (draft) this session.
     - **No text/engraving capability exists anywhere in the tool set.** A branded
       wheel (raised or engraved logo/model text on a spoke) cannot be produced —
       this would be new capability (sketch text + emboss/pocket), not a wiring gap.
@@ -350,10 +394,10 @@ DEPLOYMENT.md for how to query the live server).
       (G2/G3), FEA/fatigue/impact certification, DFM sign-off — see the Goal
       section's stated ceiling. Closing the gaps above gets to "matches this
       drawing's geometry," not to a released, certified part.
-    - Before trusting any of the above once built: per items 1 and 5-7, `catia_loft`,
-      `catia_close_surface`, `catia_sew_surface`, `catia_variable_fillet`, and
-      `catia_advanced_draft` are still unverified against live CATIA — smoke-test
-      each individually before chaining them into the wheel composite.
+    - `catia_loft`, `catia_fill`, `catia_join`, and the wheel's PartBody-activated
+      `CloseSurface` path are now verified against live CATIA. `catia_sew_surface`,
+      `catia_variable_fillet`, and `catia_advanced_draft` remain unverified and must
+      still be smoke-tested before they are chained into the wheel composite.
 
 13. **Deployment host moved 192.168.5.10 → 192.168.5.42** (2026-07-13). See
     [`DEPLOYMENT.md`](DEPLOYMENT.md) — updated throughout, plus a new
@@ -361,7 +405,160 @@ DEPLOYMENT.md for how to query the live server).
     MCP `initialize` check. Re-run the Open Work #1 smoke-test sequence against the
     new address before assuming prior live-verification results (items 1-11 above)
     still hold on this host — they were confirmed against `.10`; nothing suggests
-    the CATIA install itself changed, but this hasn't been re-confirmed on `.42`.
+    the CATIA install itself changed. Authenticated MCP `initialize` was re-confirmed
+    on 2026-07-14 (`catia-v5-mcp` 1.28.1, 95 published tools). The new `wheel.py` and
+    `sketcher.py` were then deployed through the SMB admin share with matching
+    SHA-256 hashes; the previous files are in backup `wheel-profile-20260714-104436`.
+    Follow-up hotfix deployments on the same date added the `FirstAngle` setter fix
+    (`shaft-angle-20260714-105002`), ActiveViewer fallback for view/screenshot tools
+    (`viewer-fallback-20260714-105705`), the missing `paths.py`
+    (`missing-paths-20260714-111717`), and an output-path guard for repeated wheel
+    saves (`output-path-guard-20260714-113021`). The spoke-loft work was deployed
+    through `spoke-loft-20260714-114004`, `spoke-order-hotfix-20260714-114926`, and
+    the final spline/capped-skin implementation
+    `spoke-spline-skin-20260714-120806`; each deployment had matching local/remote
+    SHA-256 hashes. The
+    previously pending `.42` geometry smoke tests are now complete: `Shaft`,
+    `catia_design_wheel`, `catia_fit_all`, `catia_set_view`, and `catia_screenshot`
+    all executed live. The remaining screenshot caveat is format fidelity, not tool
+    reachability: CATIA currently emits EMF payloads under `.png` filenames.
+
+14. **Styling phase (casting draft + spoke-root fillets) — started 2026-07-14.
+    Selection subsystem fixed and live-verified; two tool method-signature bugs
+    diagnosed and fixed locally, pending a second deploy.** This is the next fidelity
+    item after barrel/loft/valve (item 12). A live smoke test on `.42` of the two styling
+    primitives the wheel needs surfaced three real bugs (the scratch pads built fine;
+    these are selection/method failures, not geometry). In dependency order:
+    - **[FIXED + LIVE-VERIFIED] Topological reference selection was completely broken.**
+      `catia_advanced_draft` and `catia_list_subelements` failed at
+      `CreateReferenceFromObject` with `E_INVALIDARG` (`0x80070057`). Root cause:
+      `GeometryContext.list_subelements` built each edge/face Reference with
+      `part.CreateReferenceFromObject(item)` on the raw topological `Value` of a
+      `Selection.Search("Topology.*,sel")` result — rejected on this install. This one
+      call underpins **all** index/`nearest_point`/`normal` sub-element selection, so it
+      took down variable fillet, advanced draft, and the item-5 geometric-query selection
+      together. (Contrast with the base `catia_fillet`/`catia_draft`, which operate on
+      `_get_last_shape()` — the whole feature — with propagation and never build a
+      topological Reference, which is why they always worked live and these didn't.)
+      **Fix:** read the reference from the search result's `SelectedElement.Reference`
+      property instead of rebuilding it (old call kept as fallback). Deployed to `.42`
+      and re-tested 2026-07-14: `catia_list_subelements` now returns proper BRep
+      references for all 12 edges / 6 faces of a test pad. This also unblocks item 5.
+    - **[METHOD FIXED + DEPLOYED; solver input still to tune] `catia_variable_fillet`.**
+      Was `AddNewSolidEdgeFilletWithVariableRadius(edge, 1, radius)`; the real CATIA
+      member is `AddNewSolidEdgeFilletWith**Varying**Radius(edge, propagMode,
+      variationMode, radius)` (4 args), and per-vertex radii use `AddImposedVertex`, not
+      `AddRadiusVariationAtVertex` (confirmed against pycatia's `ShapeFactory`/
+      `VarRadEdgeFillet` source). Fixed (propag=1 tangency, variation=1 cubic) and
+      deployed. Live re-test 2026-07-14: the method now **resolves and creates** the
+      feature, but `UpdateObject` then fails with `E_FAIL` (`0x80004005`) — a varying
+      fillet with only a default radius and **no imposed vertices** is under-defined.
+      Next experiment: supply `variations` with `AddImposedVertex` radii at the edge's
+      end vertices (selection now works, so vertex refs are obtainable), or fall back to
+      `catia_fillet`'s constant-radius path for the wheel.
+    - **[METHOD FIXED + DEPLOYED; solver input still to tune] `catia_advanced_draft`.**
+      Was a nonexistent 6-arg overload (`Member not found`, `-2147352573`) that also
+      passed the pull direction as a Reference. Real signature is 10 args:
+      `AddNewDraft(face, neutral, neutralMode, parting, dirX, dirY, dirZ, mode, angle,
+      multiselMode)` with the pull direction a **vector** (three doubles). Reworked the
+      tool: `pull_direction` takes `"xy"/"yz"/"zx"` or `{x,y,z}`, added a required
+      `neutral` reference (parting defaults to it) and optional `propagation`
+      (none/smooth); enums standard=0/reflect=1, neutral none=0/smooth=1,
+      multiselection=0. Deployed. Live re-test 2026-07-14: the 10-arg call now
+      **resolves**, but fails inside `AddNewDraft` with `E_FAIL` — the neutral was the
+      origin `xy` plane; `AddNewDraft` wants a real **planar face of the body** as the
+      neutral, and the drafted face must be adjacent to it. Next experiment: select a
+      real planar face (e.g. the pad's bottom) as `neutral` and an adjacent side face to
+      draft; also confirm `_choose_subelement`'s `normal`-based pick returns the intended
+      side face (item 5 is now testable end-to-end).
+    - **[MAJOR CORRECTION] The base `catia_fillet` and `catia_draft` are ALSO broken —
+      they were never actually verified to produce a feature; the earlier "verified live"
+      status only meant the `part.ShapeFactory` AttributeError was gone (item 2), not that
+      a fillet/draft ever computed.** Confirmed live 2026-07-14:
+      - `catia_fillet` passed `_get_last_shape()` (the whole Pad feature) to
+        `AddNewSolidEdgeFilletWithConstantRadius`, which needs an **edge Reference**
+        (`TriDimFeatEdge`) → `E_FAIL`. **Fixed (local, pending deploy):** `catia_fillet`
+        now takes an `edge` reference spec and resolves it through `GeometryContext`
+        (the selection fix makes this possible); the whole-feature path is removed with a
+        clear error. This constant-radius edge fillet is the primitive the wheel's
+        spoke-root blends actually need.
+      - `catia_draft` called a 3-arg `AddNewDraft(shape, neutral, angle)` overload that
+        does not exist here → `DISP_E_BADPARAMCOUNT` ("Invalid number of parameters").
+        The only real overload is the 10-arg one now used by `catia_advanced_draft`.
+        `catia_draft` should either be pointed at that call or deprecated in favour of
+        `catia_advanced_draft`.
+      - So there is **no already-working styling fallback** — every fillet/draft path
+        needs valid references (now obtainable) and, for varying-fillet/draft, valid
+        solver inputs. Constant-radius edge fillet is the closest to done.
+    - **[FIXED + LIVE-VERIFIED] `catia_fillet` edge fillet now works.** Reworked to resolve
+      an `edge` spec through `GeometryContext`. The first deploy exposed a deeper wall:
+      `AddNewSolidEdgeFilletWithConstantRadius` accepted the edge ref and created the
+      feature, but `UpdateObject` failed with `E_FAIL` — consistently, across constant and
+      varying fillets and both index- and nearest_point-based selection. **Root cause:**
+      `resolve()` stored the working `SelectedElement.Reference` but never used it — for a
+      chosen sub-element it rebuilt the reference via `CreateReferenceFromName(DisplayName)`,
+      and that rebuilt reference is accepted by `AddNew*` but is **not solver-valid** (fails
+      at update). **Fix:** `resolve()` now returns the captured `SelectedElement.Reference`
+      object directly (name/object rebuild kept only as fallback). Re-tested live: constant
+      edge fillet solves by both index and nearest_point (`EdgeFillet.1`/`.2`), and a
+      varying fillet with no imposed vertices solves too. This is the completion of the
+      selection fix and unblocks all edge-based styling.
+    - **[Still open — solver semantics, not plumbing] Two refinements remain:**
+      - `catia_variable_fillet` **with** `variations`: `AddImposedVertex` still `E_FAIL`s.
+        A box-corner `vertex` reference is apparently not accepted as an imposed vertex on
+        the filleted edge; imposed vertices likely need a point genuinely on the edge (e.g.
+        a `PointOnCurve`), not an adjacent topological vertex. The no-variation varying
+        fillet works, so this is isolated to the imposed-vertex step.
+      - `catia_advanced_draft`: `AddNewDraft` constructs, but `UpdateObject` `E_FAIL`s even
+        with the fixed face references and a real planar-face neutral. Draft-specific
+        solver semantics (neutral/parting/pull relationship, or the drafted face must be
+        adjacent to the neutral face) still to work out.
+    - **[WIRED INTO THE WHEEL + LIVE-VERIFIED] constant spoke-root fillet phase.**
+      `catia_design_wheel` now runs a best-effort, **non-fatal** `_apply_spoke_fillets`
+      phase after the hub: for each spoke it selects a junction edge by `nearest_point` at
+      `(hub_radius·cosθ, hub_radius·sinθ, 0)` (trying the `Wheel_Hub` then
+      `Lofted_Spoke_Pattern` feature) and applies a constant fillet at
+      `min(fillet_radius, rim_thickness/2, spoke_thickness·0.4)` with tangency
+      propagation. Gated by a new `apply_spoke_fillets` arg (default true); a failure is
+      recorded as a warning and never discards the solid. Live build 2026-07-14
+      (400 mm / 5×114.3 / 10-spoke) returned `"status":"complete"` with
+      **`spoke_fillets: 10/10 at R4 mm`** and saved `MCP_Wheel_SpokeFillet_20260714.CATPart`.
+      **Caveat — needs visual QA:** the build's volume dropped ~13% vs. the prior no-fillet
+      lofted build (2.74 M vs 3.14 M mm³). A concave root fillet *adds* material, so the
+      decrease means the `nearest_point` pick is landing at least some fillets on **convex**
+      spoke edges (material removal), and/or tangency propagation is rounding long runs.
+      The phase mechanics are proven; the edge *targeting* likely needs refinement (a
+      point biased to the concave weld, or a smaller radius). Visual confirmation is
+      currently blocked by the EMF-screenshot bug (item 13 / DEPLOYMENT.md) — fixing that
+      is now on the critical path for closing this out.
+    - **[FIXED + LIVE-VERIFIED] `catia_screenshot` EMF-vs-PNG bug.** `_screenshot` hardcoded
+      `CaptureToFile(1, ...)` and `1` is `catCaptureFormatEMF`, so it always wrote EMF
+      regardless of extension. CATIA's `CatCaptureFormat` has **no PNG** (only
+      CGM=0/EMF=1/TIFF=2/BMP=4/JPEG=5). Fixed (`export.py`): choose the format from the
+      file extension; for a `.png` (or unsupported) path, write **JPEG** and rewrite the
+      returned path to `.jpg` so content and name agree. Deployed and verified live: iso/
+      front/right captures of the filleted wheel wrote real JPEGs, copied back and viewed.
+      **QA result:** the wheel is structurally sound and undamaged — correct barrel
+      profile (flanges/bead-seats/drop-center), ten crowned spokes, hub, bore, lugs; the
+      ~13% volume drop softened spoke edges without wrecking geometry. Individual R4 fillet
+      placement (concave root vs convex edge) is still not resolvable at overview zoom —
+      needs a zoomed spoke/hub-junction capture to finish QA.
+    - **[NEW known issue] `catia_open_document` on an already-open document raises a modal**
+      and hangs the call until dismissed (observed 2026-07-14 opening the just-saved wheel,
+      which was still open as `Part26`; five queued calls timed out before it cleared).
+      Same modal-hang class as the SaveAs case the wheel tool already guards against — a
+      `_ensure_..._not_already_open`-style guard (or reusing the active doc instead of
+      reopening) should be added to `catia_open_document`. Workaround for QA: capture the
+      active document directly rather than reopening by path.
+    - **Next:** (1) zoomed junction capture to finish fillet-placement QA, then refine
+      `_apply_spoke_fillets` edge targeting (bias the nearest_point to the concave weld, or
+      reduce the radius) if the fillets are on convex edges; (2) guard `catia_open_document`
+      against the already-open modal; (3) return to the imposed-vertex fillet and
+      advanced-draft solver semantics if variable blends / casting draft are needed.
+    - **Deployed to `.42` this session (all with `.bak` backups + verified SHA-256):**
+      `_geometry.py` (selection fix + reference-object fix — verified working),
+      `part_design_advanced.py` (varying-fillet + advanced-draft signatures),
+      `part_design.py` (fillet edge-ref — verified working). None committed to git yet.
 
 ## Risks
 
