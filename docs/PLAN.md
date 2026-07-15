@@ -565,6 +565,40 @@ DEPLOYMENT.md for how to query the live server).
       `part_design_advanced.py` (varying-fillet + advanced-draft signatures),
       `part_design.py` (fillet edge-ref — verified working). None committed to git yet.
 
+15. **Drawing (CATDrawing) tools — implemented and live-verified 2026-07-15.** New
+    `catia_mcp/tools/drawing.py` (`DrawingTools`, registered in `server.py`; published tool
+    count 95 → 103) generates associative 2D drawings from an open 3D part. Eight tools,
+    all exercised live against `.42` on the lofted wheel: `catia_new_drawing` (sheet
+    paper/orientation/scale), `catia_drawing_base_view` (front/back/top/bottom/left/right/
+    iso), `catia_drawing_projection_view`, `catia_drawing_section_view`,
+    `catia_drawing_detail_view`, `catia_drawing_update`, `catia_drawing_info`, and the
+    one-call `catia_drawing_from_part` (front+right+top+iso + optional PDF). PDF export
+    reuses `catia_export` (`ExportData(path,"pdf")`; `pdf` added to its schema enum). A
+    full six-view sheet (front/top/right/iso + section + detail) plus a one-call
+    `from_part` drawing were built, screenshotted (JPEG), and PDF-exported; the section
+    view shows the real barrel/hub cross-section and the detail view a magnified region.
+    Scope excluded (deferred): dimensions, text annotations, DXF.
+
+    Method/behaviour drift found and fixed live (same class as the 3D gotchas):
+    - **3D link is `GenerativeBehavior.Document = part_doc`, not `GenerativeLinks.AddLink`.**
+      `AddLink(document)` fails with `E_FAIL` on this seat; setting the `Document` property
+      is the working association. Base views were empty until this switch.
+    - **Derived views (projection/section/detail) do not inherit the parent's 3D source** —
+      they define the relationship but generate **no geometry** until the parent's document
+      link is carried onto them (`_carry_link`: `child.GB.Document = parent.GB.Document`,
+      `CopyLinksTo` fallback). Projection/top/right views came out empty frames until this.
+    - **The API does not auto-position or auto-scale derived views** (they land at `0,0` /
+      `1:1`, off-sheet). Projection/section/detail now set `view.Scale` (inherited from the
+      parent) and `view.x/y` (projection: offset by `gap` in the projection direction).
+    - `Documents.Add("Drawing")` works; `CatPaperSize` A0–A4 = 2–6, orientation 0/1,
+      `CatProjViewType` right/left/top/bottom = 0/1/2/3 confirmed. The section-profile
+      SAFEARRAY was accepted as a plain Python tuple (VARIANT fallback path unused so far).
+      `DefineSectionView`/`DefineCircularDetailView` auto-name the views (e.g. `SecAA-A`,
+      `DetBB`).
+    - Left for a later pass: dimensions/text/DXF; smarter auto-layout (offsets are fixed
+      `gap` mm, not part-size aware — no bounding box available, see item 11); hiding the
+      section/detail callout dressing if undesired.
+
 ## Risks
 
 - **Reference selection is the whole game** (see Open Work #2). This is where scripted

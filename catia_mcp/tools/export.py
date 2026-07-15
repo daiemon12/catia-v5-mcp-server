@@ -56,9 +56,9 @@ class ExportTools:
                             "type": "string",
                             "description": (
                                 "Export format (optional if file extension is provided). "
-                                "One of: step, iges, stl, 3dxml, vrml"
+                                "One of: step, iges, stl, 3dxml, vrml, pdf (for drawings)"
                             ),
-                            "enum": ["step", "iges", "stl", "3dxml", "vrml"],
+                            "enum": ["step", "iges", "stl", "3dxml", "vrml", "pdf"],
                         },
                     },
                     "required": ["file_path"],
