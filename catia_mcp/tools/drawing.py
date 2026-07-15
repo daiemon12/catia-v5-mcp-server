@@ -13,6 +13,7 @@ link and generative-update calls live on the target seat (see docs/PLAN.md).
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
@@ -161,6 +162,50 @@ class DrawingTools:
                 {},
             ),
             self._d(
+                "catia_fill_drawing_bom",
+                "Fill an existing CATDrawing bill-of-materials/specification table. "
+                "Rows are matched by the first column's component name; the quantity "
+                "column is filled with each row's quantity.",
+                {
+                    "drawing_path": {
+                        "type": "string",
+                        "description": "Optional full path to the CATDrawing to open before filling.",
+                    },
+                    "rows": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "quantity": {"type": "integer", "minimum": 0},
+                            },
+                            "required": ["name", "quantity"],
+                        },
+                        "minItems": 1,
+                    },
+                    "name_column": {"type": "integer", "minimum": 1, "default": 1},
+                    "quantity_column": {"type": "integer", "minimum": 1, "default": 2},
+                    "create_if_missing": {"type": "boolean", "default": True},
+                    "x": {
+                        "type": "number",
+                        "default": 250,
+                        "description": "Sheet X position for a newly created BOM table.",
+                    },
+                    "y": {
+                        "type": "number",
+                        "default": 180,
+                        "description": "Sheet Y position for a newly created BOM table.",
+                    },
+                    "row_height": {"type": "number", "exclusiveMinimum": 0, "default": 8},
+                    "name_column_width": {"type": "number", "exclusiveMinimum": 0, "default": 38},
+                    "quantity_column_width": {"type": "number", "exclusiveMinimum": 0, "default": 24},
+                    "name_header": {"type": "string", "default": "Наименование"},
+                    "quantity_header": {"type": "string", "default": "Количество"},
+                    "save": {"type": "boolean", "default": True},
+                },
+                ["rows"],
+            ),
+            self._d(
                 "catia_drawing_from_part",
                 "One-call drawing: new sheet + front/top/right + isometric views from an "
                 "open 3D part, regenerated, with optional PDF export.",
@@ -210,6 +255,8 @@ class DrawingTools:
                 return self._update(arguments)
             case "catia_drawing_info":
                 return self._info(arguments)
+            case "catia_fill_drawing_bom":
+                return self._fill_bom(arguments)
             case "catia_drawing_from_part":
                 return self._from_part(arguments)
             case _:
@@ -237,6 +284,24 @@ class DrawingTools:
 
     def _active_sheet(self) -> Any:
         return self._root().Sheets.ActiveSheet
+
+    def _open_drawing_if_needed(self, drawing_path: str | None) -> None:
+        if not drawing_path:
+            return
+        self.conn.ensure_connected()
+        docs = self.conn.documents
+        drawing_path = normalize_catia_path(drawing_path)
+        target = os.path.normcase(os.path.abspath(drawing_path))
+        for index in range(1, docs.Count + 1):
+            existing = docs.Item(index)
+            full_name = getattr(existing, "FullName", "") or ""
+            if full_name and os.path.normcase(os.path.abspath(full_name)) == target:
+                try:
+                    existing.Activate()
+                except Exception:
+                    pass
+                return
+        docs.Open(drawing_path)
 
     def _find_view(self, sheet: Any, name: str) -> Any:
         views = sheet.Views
@@ -515,6 +580,8 @@ class DrawingTools:
                         "scale": _safe(lambda v=view: v.Scale),
                         "x": _safe(lambda v=view: v.x),
                         "y": _safe(lambda v=view: v.y),
+                        "tables": self._table_diagnostics(view),
+                        "texts": self._text_diagnostics(view),
                     }
                 )
             sheets_out.append(
@@ -530,6 +597,253 @@ class DrawingTools:
             document=self.conn.active_document.Name,
             sheets=sheets_out,
             tool="catia_drawing_info",
+        )
+
+    @staticmethod
+    def _cell_text(table: Any, row: int, column: int) -> str:
+        for getter in (
+            lambda: table.GetCellString(row, column),
+            lambda: table.GetCellObject(row, column).Text,
+        ):
+            try:
+                value = getter()
+                return "" if value is None else str(value)
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _set_cell_text(table: Any, row: int, column: int, text: str) -> None:
+        for setter in (
+            lambda: table.SetCellString(row, column, text),
+            lambda: setattr(table.GetCellObject(row, column), "Text", text),
+        ):
+            try:
+                setter()
+                return
+            except Exception:
+                continue
+        raise RuntimeError(f"Could not write drawing table cell ({row}, {column}).")
+
+    @staticmethod
+    def _table_size(table: Any) -> tuple[int, int]:
+        rows = _safe(lambda: table.NumberOfRows) or _safe(lambda: table.Rows.Count) or 0
+        columns = _safe(lambda: table.NumberOfColumns) or _safe(lambda: table.Columns.Count) or 0
+        return int(rows or 0), int(columns or 0)
+
+    def _table_diagnostics(self, view: Any) -> list[dict[str, Any]]:
+        tables = _safe(lambda: view.Tables)
+        if tables is None:
+            return []
+        out: list[dict[str, Any]] = []
+        for i in range(1, tables.Count + 1):
+            table = tables.Item(i)
+            row_count, column_count = self._table_size(table)
+            sample: list[list[str]] = []
+            for row in range(1, min(row_count, 5) + 1):
+                sample.append([
+                    self._cell_text(table, row, column)
+                    for column in range(1, min(column_count, 4) + 1)
+                ])
+            out.append(
+                {
+                    "index": i,
+                    "name": getattr(table, "Name", f"Table.{i}"),
+                    "rows": row_count,
+                    "columns": column_count,
+                    "sample": sample,
+                }
+            )
+        return out
+
+    @staticmethod
+    def _text_diagnostics(view: Any) -> list[dict[str, Any]]:
+        texts = _safe(lambda: view.Texts)
+        if texts is None:
+            return []
+        out: list[dict[str, Any]] = []
+        for i in range(1, min(texts.Count, 20) + 1):
+            text = texts.Item(i)
+            out.append(
+                {
+                    "index": i,
+                    "name": getattr(text, "Name", f"Text.{i}"),
+                    "text": _safe(lambda t=text: t.Text),
+                    "x": _safe(lambda t=text: t.x),
+                    "y": _safe(lambda t=text: t.y),
+                }
+            )
+        return out
+
+    def _find_bom_table(self, expected_names: set[str]) -> tuple[Any, dict[str, Any]]:
+        root = self._root()
+        sheets = root.Sheets
+        diagnostics: list[dict[str, Any]] = []
+        best_table = None
+        best_score = -1
+        best_context: dict[str, Any] = {}
+        for sheet_index in range(1, sheets.Count + 1):
+            sheet = sheets.Item(sheet_index)
+            sheet_diag: dict[str, Any] = {
+                "name": getattr(sheet, "Name", f"Sheet.{sheet_index}"),
+                "views": [],
+            }
+            views = sheet.Views
+            for view_index in range(1, views.Count + 1):
+                view = views.Item(view_index)
+                view_diag = {
+                    "name": getattr(view, "Name", f"View.{view_index}"),
+                    "tables": self._table_diagnostics(view),
+                    "texts": self._text_diagnostics(view),
+                }
+                sheet_diag["views"].append(view_diag)
+                tables = _safe(lambda v=view: v.Tables)
+                if tables is None:
+                    continue
+                for table_index in range(1, tables.Count + 1):
+                    table = tables.Item(table_index)
+                    row_count, column_count = self._table_size(table)
+                    if row_count <= 0 or column_count <= 0:
+                        continue
+                    score = 0
+                    for row in range(1, row_count + 1):
+                        for column in range(1, column_count + 1):
+                            if self._cell_text(table, row, column).strip() in expected_names:
+                                score += 1
+                    if score > best_score:
+                        best_table = table
+                        best_score = score
+                        best_context = {
+                            "sheet": sheet_diag["name"],
+                            "view": view_diag["name"],
+                            "table_index": table_index,
+                            "rows": row_count,
+                            "columns": column_count,
+                            "matched_names": score,
+                        }
+            diagnostics.append(sheet_diag)
+        if best_table is None or best_score <= 0:
+            raise RuntimeError(
+                "No DrawingTable containing the requested component names was found. "
+                + result(tool="catia_fill_drawing_bom", diagnostics=diagnostics)
+            )
+        return best_table, best_context
+
+    def _target_table_view(self) -> Any:
+        sheet = self._active_sheet()
+        views = sheet.Views
+        fallback = None
+        for index in range(1, views.Count + 1):
+            view = views.Item(index)
+            name = getattr(view, "Name", "")
+            if fallback is None:
+                fallback = view
+            if str(name).lower() != "background view":
+                return view
+        if fallback is None:
+            raise RuntimeError("The active drawing sheet has no views for placing a BOM table.")
+        return fallback
+
+    @staticmethod
+    def _set_table_column_width(table: Any, column: int, width: float) -> None:
+        for setter in (
+            lambda: table.SetColumnSize(column, width),
+            lambda: table.SetColumnWidth(column, width),
+        ):
+            try:
+                setter()
+                return
+            except Exception:
+                continue
+
+    @staticmethod
+    def _set_table_row_height(table: Any, row: int, height: float) -> None:
+        for setter in (
+            lambda: table.SetRowSize(row, height),
+            lambda: table.SetRowHeight(row, height),
+        ):
+            try:
+                setter()
+                return
+            except Exception:
+                continue
+
+    def _create_bom_table(
+        self, args: dict[str, Any], rows: list[dict[str, Any]]
+    ) -> tuple[Any, dict[str, Any]]:
+        view = self._target_table_view()
+        tables = view.Tables
+        row_height = float(args.get("row_height", 8))
+        name_width = float(args.get("name_column_width", 38))
+        quantity_width = float(args.get("quantity_column_width", 24))
+        x = float(args.get("x", 250))
+        y = float(args.get("y", 180))
+        table = tables.Add(x, y, len(rows) + 1, 2, row_height, name_width)
+        self._set_table_column_width(table, 1, name_width)
+        self._set_table_column_width(table, 2, quantity_width)
+        for row_index in range(1, len(rows) + 2):
+            self._set_table_row_height(table, row_index, row_height)
+        self._set_cell_text(table, 1, 1, str(args.get("name_header", "Наименование")))
+        self._set_cell_text(table, 1, 2, str(args.get("quantity_header", "Количество")))
+        for index, row in enumerate(rows, start=2):
+            self._set_cell_text(table, index, 1, str(row["name"]))
+            self._set_cell_text(table, index, 2, str(int(row["quantity"])))
+        return table, {
+            "sheet": self._active_sheet().Name,
+            "view": getattr(view, "Name", "unknown"),
+            "table_index": _safe(lambda: view.Tables.Count),
+            "rows": len(rows) + 1,
+            "columns": 2,
+            "created": True,
+            "x": x,
+            "y": y,
+        }
+
+    def _fill_bom(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        self._open_drawing_if_needed(args.get("drawing_path"))
+        rows = args["rows"]
+        expected: dict[str, int] = {str(row["name"]): int(row["quantity"]) for row in rows}
+        name_column = int(args.get("name_column", 1))
+        quantity_column = int(args.get("quantity_column", 2))
+        created = False
+        try:
+            table, context = self._find_bom_table(set(expected))
+        except RuntimeError:
+            if not args.get("create_if_missing", True):
+                raise
+            table, context = self._create_bom_table(args, rows)
+            created = True
+        row_count, _column_count = self._table_size(table)
+        written: dict[str, int] = {}
+        missing = set(expected)
+        for row_index in range(1, row_count + 1):
+            component_name = self._cell_text(table, row_index, name_column).strip()
+            if component_name not in expected:
+                continue
+            quantity = expected[component_name]
+            self._set_cell_text(table, row_index, quantity_column, str(quantity))
+            written[component_name] = quantity
+            missing.discard(component_name)
+        if missing:
+            raise RuntimeError(
+                f"DrawingTable was found, but these components were not present in "
+                f"column {name_column}: {sorted(missing)}. Context: {context}"
+            )
+        try:
+            self.conn.active_document.Update()
+        except Exception:
+            pass
+        if args.get("save", True):
+            self.conn.active_document.Save()
+        self.conn.refresh_display()
+        return result(
+            document=self.conn.active_document.Name,
+            context=context,
+            written=written,
+            created=created,
+            saved=bool(args.get("save", True)),
+            tool="catia_fill_drawing_bom",
         )
 
     def _from_part(self, args: dict[str, Any]) -> str:

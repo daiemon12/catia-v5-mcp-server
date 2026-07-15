@@ -87,6 +87,23 @@ class DocumentTools:
                 },
             },
             {
+                "name": "catia_activate_document",
+                "description": "Activate an already-open CATIA document by full path or document name.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "Full path of the open document to activate",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Document name to activate, e.g. '10.CATPart'",
+                        },
+                    },
+                },
+            },
+            {
                 "name": "catia_save_document",
                 "description": "Save the active CATIA document. Optionally save to a new path (Save As).",
                 "inputSchema": {
@@ -146,6 +163,10 @@ class DocumentTools:
                 return self._new_product(arguments.get("name"))
             case "catia_open_document":
                 return self._open_document(arguments["file_path"])
+            case "catia_activate_document":
+                return self._activate_document(
+                    arguments.get("file_path"), arguments.get("name")
+                )
             case "catia_save_document":
                 return self._save_document(arguments.get("file_path"))
             case "catia_close_document":
@@ -190,13 +211,78 @@ class DocumentTools:
             existing = docs.Item(index)
             full_name = getattr(existing, "FullName", "") or ""
             if full_name and os.path.normcase(os.path.abspath(full_name)) == target:
-                try:
-                    existing.Activate()
-                except Exception:
-                    pass
+                self._activate_document(file_path=file_path)
                 return f"Document already open; reused: '{existing.Name}' from {file_path}"
         doc = docs.Open(file_path)
+        self._ensure_active_document(doc.Name, file_path)
         return f"Opened document: '{doc.Name}' from {file_path}"
+
+    def _activate_document(self, file_path: str | None = None, name: str | None = None) -> str:
+        self.conn.ensure_connected()
+        if not file_path and not name:
+            raise ValueError("file_path or name is required")
+
+        docs = self.conn.documents
+        target_path = (
+            os.path.normcase(os.path.abspath(normalize_catia_path(file_path)))
+            if file_path
+            else None
+        )
+        target_name = name.casefold() if name else None
+        selected = None
+
+        for index in range(1, docs.Count + 1):
+            doc = docs.Item(index)
+            full_name = getattr(doc, "FullName", "") or ""
+            path_matches = (
+                bool(target_path)
+                and full_name
+                and os.path.normcase(os.path.abspath(full_name)) == target_path
+            )
+            name_matches = bool(target_name) and doc.Name.casefold() == target_name
+            if path_matches or name_matches:
+                selected = doc
+                break
+
+        if selected is None:
+            wanted = file_path or name
+            raise RuntimeError(f"Open document was not found: {wanted}")
+
+        # CATIA automation can leave ActiveDocument unchanged after Document.Activate()
+        # when many documents are open. Activate both the document and its window,
+        # then verify the active document before returning.
+        try:
+            selected.Activate()
+        except Exception:
+            pass
+        try:
+            windows = self.conn.app.Windows
+            for index in range(1, windows.Count + 1):
+                window = windows.Item(index)
+                caption = getattr(window, "Caption", "") or ""
+                if selected.Name.casefold() in caption.casefold():
+                    window.Activate()
+                    break
+        except Exception:
+            pass
+
+        self._ensure_active_document(selected.Name, getattr(selected, "FullName", "") or None)
+        return f"Activated document: '{selected.Name}'"
+
+    def _ensure_active_document(self, name: str, file_path: str | None = None) -> None:
+        active = self.conn.active_document
+        active_path = getattr(active, "FullName", "") or ""
+        if active.Name == name:
+            if not file_path:
+                return
+            if active_path and os.path.normcase(os.path.abspath(active_path)) == os.path.normcase(
+                os.path.abspath(file_path)
+            ):
+                return
+        raise RuntimeError(
+            f"CATIA did not activate '{name}'. Active document is "
+            f"'{active.Name}' ({active_path or 'unsaved'})."
+        )
 
     def _save_document(self, file_path: str | None = None) -> str:
         doc = self.conn.active_document
