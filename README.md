@@ -17,7 +17,7 @@ before extending or redeploying this server.
 
 ## What it does
 
-This MCP server exposes **50+ tools** that let Claude:
+This MCP server exposes **100+ tools** that let Claude:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -336,10 +336,23 @@ Claude (Desktop/Code)  ──HTTP + Bearer token, over LAN/VPN──▶  catia_m
 ### Export Tools (4)
 | Tool | Description |
 |------|-------------|
-| `catia_export` | Export to STEP/IGES/STL/3DXML/VRML |
-| `catia_screenshot` | Capture 3D view to image |
+| `catia_export` | Export to STEP/IGES/STL/3DXML/VRML/PDF |
+| `catia_screenshot` | Capture 3D view to image (JPEG/BMP/TIFF/EMF) |
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
+
+### Drawing Tools (8)
+2D drafting: generate associative drawing views from an open 3D part, then export to PDF.
+| Tool | Description |
+|------|-------------|
+| `catia_new_drawing` | Create a CATDrawing and set sheet paper size/orientation/scale |
+| `catia_drawing_base_view` | Generative view from a 3D part (front/back/top/bottom/left/right/iso) |
+| `catia_drawing_projection_view` | Projection view (right/left/top/bottom) off a parent view |
+| `catia_drawing_section_view` | Section view cut by a profile polyline |
+| `catia_drawing_detail_view` | Circular detail (blow-up) view |
+| `catia_drawing_update` | Regenerate all generative views |
+| `catia_drawing_info` | List sheets and views |
+| `catia_drawing_from_part` | One call: front+right+top+iso views + optional PDF |
 
 ## Generative Shape Design and wheels
 

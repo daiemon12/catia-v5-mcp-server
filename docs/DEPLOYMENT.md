@@ -283,8 +283,15 @@ automation and file I/O:
 - **Base tools (54, pre-GSD)** — live-verified: `catia_list_documents` and
   `catia_new_product` were both called through the deployed HTTP endpoint and
   confirmed against the actual CATIA window (created a real `Product2.CATProduct`).
-- **Current HTTP server** — authenticated `initialize` was re-confirmed on
-  `192.168.5.42:8000` with 95 published tools on 2026-07-14.
+- **Current HTTP server** — authenticated `initialize` re-confirmed on
+  `192.168.5.42:8000`; **103 published tools** as of 2026-07-15 (95 + 8 drawing tools).
+- **Drawing (CATDrawing) tools** — all 8 live-verified 2026-07-15 on the lofted wheel:
+  a six-view sheet (front/top/right/iso + section + detail) and a one-call
+  `catia_drawing_from_part` drawing were generated, screenshotted, and exported to PDF.
+  Key working shapes (see `docs/PLAN.md` item 15): link the 3D via
+  `GenerativeBehavior.Document = part_doc` (not `GenerativeLinks.AddLink`), carry that
+  link onto derived views or they render empty, and set scale/position explicitly (no
+  API auto-layout).
 - **GSD wheel path** — `catia_spline_3d`, `catia_loft`, `catia_fill`, `catia_join`,
   the PartBody-activated `CloseSurface` path, and the resulting circular pattern were
   exercised against live CATIA. A complete ten-spoke wheel was built and saved as
