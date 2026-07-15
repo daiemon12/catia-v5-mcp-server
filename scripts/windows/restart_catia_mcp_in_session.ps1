@@ -625,10 +625,10 @@ namespace CatiaMcp {
     }
 
     $binaryPath = '"' + $exePath + '" "' + $configPath + '"'
-    New-Service -Name $serviceName -BinaryPathName $binaryPath -StartupType Manual | Out-Null
+    & sc.exe create $serviceName binPath= $binaryPath start= demand | Out-Null
     try {
         try {
-            Start-Service -Name $serviceName -ErrorAction Stop
+            & sc.exe start $serviceName | Out-Null
         } catch {
             # A one-shot launcher can complete before Service Control Manager is
             # satisfied. The result file below is the source of truth.

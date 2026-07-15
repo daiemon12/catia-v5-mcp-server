@@ -22,6 +22,29 @@ class AdvancedPartDesignTools:
                 ["surface"],
             ),
             self._d(
+                "catia_build_slinky_from_points",
+                "Build a solid slinky spring from explicit guide points and a circular wire profile.",
+                {
+                    "points": {
+                        "type": "array",
+                        "minItems": 3,
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 3,
+                            "maxItems": 3,
+                        },
+                    },
+                    "wire_radius": {"type": "number", "exclusiveMinimum": 0},
+                    "geoset": {"type": "string", "default": "Solution_10_Construction"},
+                    "guide_name": {"type": "string", "default": "Solution_10_Guide"},
+                    "profile_name": {"type": "string", "default": "Solution_10_WireProfile"},
+                    "surface_name": {"type": "string", "default": "Solution_10_SweepSurface"},
+                    "solid_name": {"type": "string", "default": "Solution_10_Slinky"},
+                },
+                ["points", "wire_radius"],
+            ),
+            self._d(
                 "catia_thick_surface",
                 "Thicken a surface into a solid.",
                 {
@@ -162,6 +185,8 @@ class AdvancedPartDesignTools:
         sf, r = self.conn.shape_factory, self.geo.resolve
         if tool_name == "catia_close_surface":
             feature = sf.AddNewCloseSurface(r(args["surface"]))
+        elif tool_name == "catia_build_slinky_from_points":
+            return self._build_slinky_from_points(args)
         elif tool_name == "catia_thick_surface":
             feature = sf.AddNewThickSurface(
                 r(args["surface"]), 0, args["offset1"], args.get("offset2", 0)
@@ -227,3 +252,96 @@ class AdvancedPartDesignTools:
             feature.Name = args["name"]
         self.geo.update(feature)
         return result(feature={"name": feature.Name, "kind": "feature"}, tool=tool_name)
+
+    def _build_slinky_from_points(self, args: dict[str, Any]) -> str:
+        points = [[float(v) for v in point] for point in args["points"]]
+        wire_radius = float(args["wire_radius"])
+        geoset_name = args.get("geoset") or "Solution_10_Construction"
+        guide_name = args.get("guide_name") or "Solution_10_Guide"
+        profile_name = args.get("profile_name") or "Solution_10_WireProfile"
+        surface_name = args.get("surface_name") or "Solution_10_SweepSurface"
+        solid_name = args.get("solid_name") or "Solution_10_Slinky"
+
+        part = self.geo.part
+        hsf = self.geo.hsf
+        container = self.geo.geoset(geoset_name, create=True)
+
+        guide = hsf.AddNewSpline()
+        guide.Name = guide_name
+        guide.SetClosing(False)
+        point_refs = []
+        for index, xyz in enumerate(points, start=1):
+            point = hsf.AddNewPointCoord(xyz[0], xyz[1], xyz[2])
+            point.Name = f"{guide_name}_Point_{index:03d}"
+            container.AppendHybridShape(point)
+            point_refs.append(part.CreateReferenceFromObject(point))
+            guide.AddPoint(point_refs[-1])
+        container.AppendHybridShape(guide)
+        part.InWorkObject = guide
+        part.UpdateObject(guide)
+
+        p0 = points[0]
+        p1 = points[1]
+        tangent = [p1[i] - p0[i] for i in range(3)]
+        tangent_len = sum(v * v for v in tangent) ** 0.5 or 1.0
+        tangent = [v / tangent_len for v in tangent]
+        radial = [p0[0], p0[1], 0.0]
+        radial_len = (radial[0] ** 2 + radial[1] ** 2) ** 0.5 or 1.0
+        n1 = [radial[0] / radial_len, radial[1] / radial_len, 0.0]
+        n2 = [
+            tangent[1] * n1[2] - tangent[2] * n1[1],
+            tangent[2] * n1[0] - tangent[0] * n1[2],
+            tangent[0] * n1[1] - tangent[1] * n1[0],
+        ]
+        n2_len = sum(v * v for v in n2) ** 0.5 or 1.0
+        n2 = [v / n2_len for v in n2]
+
+        start = hsf.AddNewPointCoord(p0[0], p0[1], p0[2])
+        start.Name = f"{profile_name}_Center"
+        pa = hsf.AddNewPointCoord(p0[0] + n1[0], p0[1] + n1[1], p0[2] + n1[2])
+        pa.Name = f"{profile_name}_PlaneA"
+        pb = hsf.AddNewPointCoord(p0[0] + n2[0], p0[1] + n2[1], p0[2] + n2[2])
+        pb.Name = f"{profile_name}_PlaneB"
+        for point in (start, pa, pb):
+            container.AppendHybridShape(point)
+
+        plane = hsf.AddNewPlane3Points(
+            part.CreateReferenceFromObject(start),
+            part.CreateReferenceFromObject(pa),
+            part.CreateReferenceFromObject(pb),
+        )
+        plane.Name = f"{profile_name}_Plane"
+        container.AppendHybridShape(plane)
+        part.UpdateObject(plane)
+
+        circle = hsf.AddNewCircleCtrRad(
+            part.CreateReferenceFromObject(start),
+            part.CreateReferenceFromObject(plane),
+            False,
+            wire_radius,
+        )
+        circle.Name = profile_name
+        container.AppendHybridShape(circle)
+        part.UpdateObject(circle)
+
+        sweep = hsf.AddNewSweepExplicit(
+            part.CreateReferenceFromObject(circle),
+            part.CreateReferenceFromObject(guide),
+        )
+        sweep.Name = surface_name
+        container.AppendHybridShape(sweep)
+        part.UpdateObject(sweep)
+
+        part.InWorkObject = self.conn.get_active_part_body()
+        solid = self.conn.shape_factory.AddNewCloseSurface(part.CreateReferenceFromObject(sweep))
+        solid.Name = solid_name
+        part.UpdateObject(solid)
+        self.conn.refresh_display()
+        return result(
+            feature={"name": solid.Name, "kind": "feature"},
+            guide={"name": guide.Name, "kind": "feature"},
+            surface={"name": sweep.Name, "kind": "feature"},
+            points=len(points),
+            wire_radius=wire_radius,
+            tool="catia_build_slinky_from_points",
+        )

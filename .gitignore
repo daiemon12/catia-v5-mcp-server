@@ -8,6 +8,7 @@ build/
 .venv/
 venv/
 .env
+.tmp-live-shots/
 
 # Credentials — never commit
 *-creds

@@ -160,6 +160,102 @@ class PartDesignTools:
                 },
             },
             {
+                "name": "catia_fillet_edges",
+                "description": (
+                    "Add one constant-radius edge fillet to multiple topological edges "
+                    "of a named feature, selected by Topology.Edge search indices."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "radius": {
+                            "type": "number",
+                            "description": "Fillet radius in mm",
+                        },
+                        "edge_indices": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 1},
+                            "minItems": 1,
+                            "description": "Topology.Edge indices on the target feature",
+                        },
+                        "feature": {
+                            "type": "string",
+                            "description": "Feature to enumerate edges from (default: last PartBody shape)",
+                        },
+                        "document_path": {
+                            "type": "string",
+                            "description": "Optional CATPart path to activate/open before applying the fillet",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Optional name for the fillet feature",
+                        },
+                        "save": {
+                            "type": "boolean",
+                            "description": "Save the document after successful update (default false)",
+                            "default": False,
+                        },
+                        "propagation": {
+                            "type": "string",
+                            "description": "Fillet edge propagation mode: none or tangent (default none)",
+                            "enum": ["none", "tangent"],
+                            "default": "none",
+                        },
+                    },
+                    "required": ["radius", "edge_indices"],
+                },
+            },
+            {
+                "name": "catia_probe_fillet_edges",
+                "description": (
+                    "Probe whether individual topological edges can accept a temporary "
+                    "constant-radius fillet. Temporary features are deleted and the "
+                    "document is not saved."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "document_path": {"type": "string"},
+                        "feature": {"type": "string"},
+                        "radius": {"type": "number"},
+                        "edge_indices": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 1},
+                            "minItems": 1,
+                        },
+                        "propagation": {
+                            "type": "string",
+                            "enum": ["none", "tangent"],
+                            "default": "none",
+                        },
+                    },
+                    "required": ["document_path", "radius", "edge_indices"],
+                },
+            },
+            {
+                "name": "catia_face_fillet_from_edges",
+                "description": (
+                    "Create face fillets between the two faces adjacent to each selected "
+                    "topological edge index."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "document_path": {"type": "string"},
+                        "feature": {"type": "string"},
+                        "radius": {"type": "number"},
+                        "edge_indices": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 1},
+                            "minItems": 1,
+                        },
+                        "name_prefix": {"type": "string", "default": "FaceFillet"},
+                        "save": {"type": "boolean", "default": False},
+                    },
+                    "required": ["document_path", "radius", "edge_indices"],
+                },
+            },
+            {
                 "name": "catia_chamfer",
                 "description": "Add a chamfer (beveled edge) to an edge of the current solid.",
                 "inputSchema": {
@@ -400,6 +496,12 @@ class PartDesignTools:
                 return self._groove(arguments)
             case "catia_fillet":
                 return self._fillet(arguments)
+            case "catia_fillet_edges":
+                return self._fillet_edges(arguments)
+            case "catia_probe_fillet_edges":
+                return self._probe_fillet_edges(arguments)
+            case "catia_face_fillet_from_edges":
+                return self._face_fillet_from_edges(arguments)
             case "catia_chamfer":
                 return self._chamfer(arguments)
             case "catia_hole":
@@ -574,6 +676,331 @@ class PartDesignTools:
         part.UpdateObject(fillet)
         self.conn.refresh_display()
         return f"Fillet created: R{radius} mm. Feature: '{fillet.Name}'"
+
+    def _document_from_path(self, document_path: str | None) -> Any:
+        if not document_path:
+            return self.conn.active_document
+
+        import os
+
+        from catia_mcp.paths import normalize_catia_path
+
+        self.conn.ensure_connected()
+        docs = self.conn.documents
+        document_path = normalize_catia_path(document_path)
+        target = os.path.normcase(os.path.abspath(document_path))
+        for index in range(1, docs.Count + 1):
+            doc = docs.Item(index)
+            full_name = getattr(doc, "FullName", "") or ""
+            if full_name and os.path.normcase(os.path.abspath(full_name)) == target:
+                try:
+                    doc.Activate()
+                except Exception:
+                    pass
+                return doc
+        doc = docs.Open(document_path)
+        try:
+            doc.Activate()
+        except Exception:
+            pass
+        return doc
+
+    def _shape_by_name_or_last(self, part: Any, feature_name: str | None = None) -> Any:
+        body = part.MainBody
+        shapes = body.Shapes
+        if feature_name:
+            return shapes.Item(feature_name)
+        if shapes.Count == 0:
+            raise RuntimeError("No features found in the active body.")
+        return shapes.Item(shapes.Count)
+
+    def _edge_refs_by_indices(self, doc: Any, shape: Any, edge_indices: list[int]) -> dict[int, Any]:
+        part = doc.Part
+        selection = doc.Selection
+        wanted = set(edge_indices)
+        found: dict[int, Any] = {}
+        selection.Clear()
+        selection.Add(shape)
+        try:
+            selection.Search("Topology.Edge,sel")
+            for index in range(1, selection.Count + 1):
+                if index not in wanted:
+                    continue
+                selected = selection.Item(index)
+                try:
+                    ref = selected.Reference
+                except Exception:
+                    ref = part.CreateReferenceFromObject(selected.Value)
+                found[index] = ref
+        finally:
+            selection.Clear()
+
+        missing = sorted(wanted - set(found))
+        if missing:
+            raise IndexError(
+                f"Edge indices not found on '{getattr(shape, 'Name', '<shape>')}': {missing}"
+            )
+        return found
+
+    def _fillet_edges(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        doc = self._document_from_path(args.get("document_path"))
+        try:
+            part = doc.Part
+        except Exception as exc:
+            raise RuntimeError("Target document is not a CATPart.") from exc
+
+        radius = args["radius"]
+        edge_indices = [int(value) for value in args["edge_indices"]]
+        if len(set(edge_indices)) != len(edge_indices):
+            edge_indices = sorted(set(edge_indices))
+
+        part.InWorkObject = part.MainBody
+        shape = self._shape_by_name_or_last(part, args.get("feature"))
+        refs = self._edge_refs_by_indices(doc, shape, edge_indices)
+        ordered_refs = [refs[index] for index in edge_indices]
+        propagation = 1 if args.get("propagation", "none") == "tangent" else 0
+
+        sf = part.ShapeFactory
+        try:
+            fillet = sf.AddNewSolidEdgeFilletWithConstantRadius(
+                ordered_refs[0],
+                propagation,
+                radius,
+            )
+            creation_method = "AddNewSolidEdgeFilletWithConstantRadius"
+        except Exception:
+            fillet = sf.AddNewEdgeFilletWithConstantRadius(
+                ordered_refs[0],
+                propagation,
+                radius,
+            )
+            creation_method = "AddNewEdgeFilletWithConstantRadius"
+        if args.get("name"):
+            fillet.Name = args["name"]
+
+        add_failures: list[str] = []
+        for index, ref in zip(edge_indices[1:], ordered_refs[1:]):
+            try:
+                fillet.AddObjectToFillet(ref)
+            except Exception as exc:
+                add_failures.append(f"{index}: {exc}")
+
+        part.UpdateObject(fillet)
+        if args.get("save", False):
+            doc.Save()
+        self.conn.refresh_display()
+
+        return json.dumps(
+            {
+                "feature": fillet.Name,
+                "creation_method": creation_method,
+                "propagation": args.get("propagation", "none"),
+                "radius": radius,
+                "source_feature": getattr(shape, "Name", ""),
+                "edge_indices": edge_indices,
+                "add_failures": add_failures,
+                "saved": bool(args.get("save", False)),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    def _delete_feature(self, doc: Any, feature: Any) -> None:
+        selection = doc.Selection
+        selection.Clear()
+        try:
+            selection.Add(feature)
+            selection.Delete()
+        finally:
+            selection.Clear()
+
+    def _new_edge_fillet(self, part: Any, edge_ref: Any, radius: float, propagation: int) -> tuple[Any, str]:
+        sf = part.ShapeFactory
+        try:
+            return (
+                sf.AddNewSolidEdgeFilletWithConstantRadius(edge_ref, propagation, radius),
+                "AddNewSolidEdgeFilletWithConstantRadius",
+            )
+        except Exception:
+            return (
+                sf.AddNewEdgeFilletWithConstantRadius(edge_ref, propagation, radius),
+                "AddNewEdgeFilletWithConstantRadius",
+            )
+
+    def _probe_fillet_edges(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        doc = self._document_from_path(args.get("document_path"))
+        try:
+            part = doc.Part
+        except Exception as exc:
+            raise RuntimeError("Target document is not a CATPart.") from exc
+
+        part.InWorkObject = part.MainBody
+        shape = self._shape_by_name_or_last(part, args.get("feature"))
+        edge_indices = [int(value) for value in args["edge_indices"]]
+        refs = self._edge_refs_by_indices(doc, shape, edge_indices)
+        propagation = 1 if args.get("propagation", "none") == "tangent" else 0
+        radius = float(args["radius"])
+
+        results = []
+        for index in edge_indices:
+            feature = None
+            method = "unknown"
+            try:
+                feature, method = self._new_edge_fillet(part, refs[index], radius, propagation)
+                feature.Name = f"Probe_R{radius:g}_{index}"
+                part.UpdateObject(feature)
+                status = "ok"
+                error = None
+            except Exception as exc:
+                status = "failed"
+                error = str(exc)
+            finally:
+                if feature is not None:
+                    try:
+                        self._delete_feature(doc, feature)
+                        try:
+                            part.Update()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+            results.append(
+                {
+                    "edge_index": index,
+                    "status": status,
+                    "method": method,
+                    "error": error,
+                }
+            )
+
+        self.conn.refresh_display()
+        return json.dumps(
+            {
+                "document": getattr(doc, "FullName", getattr(doc, "Name", "")),
+                "radius": radius,
+                "propagation": args.get("propagation", "none"),
+                "results": results,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    def _refs_by_topology(
+        self, doc: Any, shape: Any, query: str
+    ) -> list[tuple[int, Any, Any, str]]:
+        selection = doc.Selection
+        selection.Clear()
+        selection.Add(shape)
+        refs: list[tuple[int, Any, Any, str]] = []
+        try:
+            selection.Search(f"{query},sel")
+            for index in range(1, selection.Count + 1):
+                selected = selection.Item(index)
+                try:
+                    ref = selected.Reference
+                except Exception:
+                    ref = doc.Part.CreateReferenceFromObject(selected.Value)
+                try:
+                    display_name = ref.DisplayName
+                except Exception:
+                    display_name = ""
+                refs.append((index, selected.Value, ref, display_name))
+        finally:
+            selection.Clear()
+        return refs
+
+    def _face_fillet_from_edges(self, args: dict[str, Any]) -> str:
+        import re
+
+        self.conn.ensure_connected()
+        doc = self._document_from_path(args.get("document_path"))
+        try:
+            part = doc.Part
+        except Exception as exc:
+            raise RuntimeError("Target document is not a CATPart.") from exc
+
+        part.InWorkObject = part.MainBody
+        shape = self._shape_by_name_or_last(part, args.get("feature"))
+        edge_indices = [int(value) for value in args["edge_indices"]]
+        radius = float(args["radius"])
+        name_prefix = args.get("name_prefix", "FaceFillet")
+
+        edge_refs = {
+            index: display_name
+            for index, _obj, _ref, display_name in self._refs_by_topology(
+                doc, shape, "Topology.Edge"
+            )
+        }
+        face_refs: dict[str, Any] = {}
+        for _index, _obj, ref, display_name in self._refs_by_topology(
+            doc, shape, "Topology.Face"
+        ):
+            match = re.search(r"Brp:\([^;]+;%([0-9]+)\)", display_name)
+            if match:
+                face_refs[match.group(1)] = ref
+
+        pairs: list[tuple[int, str, str]] = []
+        for edge_index in edge_indices:
+            display_name = edge_refs.get(edge_index, "")
+            face_ids = re.findall(r"Face:\(Brp:\([^;]+;%([0-9]+)\)", display_name)
+            if len(face_ids) >= 2:
+                pairs.append((edge_index, face_ids[0], face_ids[1]))
+
+        unique_pairs: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for _edge_index, face_a, face_b in pairs:
+            key = tuple(sorted((face_a, face_b)))
+            if key not in seen:
+                seen.add(key)
+                unique_pairs.append((face_a, face_b))
+
+        results = []
+        for pair_index, (face_a, face_b) in enumerate(unique_pairs, start=1):
+            feature = None
+            try:
+                ref_a = face_refs[face_a]
+                ref_b = face_refs[face_b]
+                try:
+                    feature = part.ShapeFactory.AddNewSolidFaceFillet(ref_a, ref_b, radius)
+                except Exception:
+                    feature = part.ShapeFactory.AddNewSolidFaceFillet(ref_a, ref_b, 1, radius)
+                feature.Name = f"{name_prefix}_{pair_index:02d}_{face_a}_{face_b}"
+                part.UpdateObject(feature)
+                results.append(
+                    {
+                        "faces": [face_a, face_b],
+                        "feature": feature.Name,
+                        "status": "ok",
+                    }
+                )
+            except Exception as exc:
+                results.append(
+                    {
+                        "faces": [face_a, face_b],
+                        "feature": getattr(feature, "Name", None) if feature is not None else None,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                )
+
+        if args.get("save", False):
+            doc.Save()
+        self.conn.refresh_display()
+        return json.dumps(
+            {
+                "document": getattr(doc, "FullName", getattr(doc, "Name", "")),
+                "radius": radius,
+                "edge_indices": edge_indices,
+                "face_pairs": pairs,
+                "unique_pair_count": len(unique_pairs),
+                "results": results,
+                "saved": bool(args.get("save", False)),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     def _chamfer(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()

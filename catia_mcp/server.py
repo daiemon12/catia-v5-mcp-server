@@ -24,6 +24,7 @@ from mcp.types import TextContent, Tool
 
 from catia_mcp.connection import CATIAConnection
 from catia_mcp.tools.assembly import AssemblyTools
+from catia_mcp.tools.contest import ContestTools
 from catia_mcp.tools.document import DocumentTools
 from catia_mcp.tools.drawing import DrawingTools
 from catia_mcp.tools.export import ExportTools
@@ -32,6 +33,7 @@ from catia_mcp.tools.knowledge import KnowledgeTools
 from catia_mcp.tools.measurement import MeasurementTools
 from catia_mcp.tools.part_design import PartDesignTools
 from catia_mcp.tools.part_design_advanced import AdvancedPartDesignTools
+from catia_mcp.tools.saw import SawTools
 from catia_mcp.tools.sketcher import SketcherTools
 from catia_mcp.tools.surface import SurfaceTools
 from catia_mcp.tools.wheel import WheelTools
@@ -69,7 +71,9 @@ class CATIAMCPServer:
         self.advanced_part_design_tools = AdvancedPartDesignTools(self.connection)
         self.knowledge_tools = KnowledgeTools(self.connection)
         self.wheel_tools = WheelTools(self.connection)
+        self.saw_tools = SawTools(self.connection)
         self.drawing_tools = DrawingTools(self.connection)
+        self.contest_tools = ContestTools(self.connection)
 
         # All tool modules
         self._tool_modules = [
@@ -85,7 +89,9 @@ class CATIAMCPServer:
             self.advanced_part_design_tools,
             self.knowledge_tools,
             self.wheel_tools,
+            self.saw_tools,
             self.drawing_tools,
+            self.contest_tools,
         ]
 
         # Build tool name -> module routing table
