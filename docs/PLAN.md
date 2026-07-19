@@ -1,15 +1,51 @@
 # GSD (Generative Shape Design) Extension — Implementation Plan
 
-**Status as of 2026-07-14:** Stages 1–6 below are **coded but not yet verified against
+**Status as of 2026-07-19:** Stages 1–6 below are **coded but not yet verified against
 live CATIA**. This document is the durable, portable version of the plan — written so
 work can continue from a fresh session or a different tool (e.g. Codex) without the
 originating conversation's history. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for how to
 reach the running CATIA instance and exercise these tools. Deployment host moved to
 `192.168.5.42` and a fidelity gap-analysis against a real wheel drawing was added
-(items 12-13 in Open Work). The barrel/loft/valve fidelity items are now done and
-verified live; the **current critical path is the styling phase (item 14) — casting
-draft and spoke-root fillets** — whose first blocker (topological reference selection)
-was reproduced live on 2026-07-14 and is being fixed.
+(items 12-13 in Open Work). The barrel/loft/valve fidelity items are done and verified
+live; the styling phase (item 14, casting draft and spoke-root fillets) is delivered
+and QA'd; drawing tools (item 15) and a second spoke style (item 16, `y_fork`) are also
+done and verified live. **All items below (1-16) remain an accurate record of the
+GSD/wheel work** — nothing in this stage regressed.
+
+**Scope note (added 2026-07-19):** this server has since grown a large, separate body
+of code — `catia_mcp/tools/contest.py` (15 tools: `catia_solve_task07_plug` /
+`catia_solve_task09_eviscerator` / `catia_solve_task11_geosets` /
+`catia_solve_task12_hex_prisms` / `catia_solve_task13_chain` /
+`catia_solve_task15_centerline` / `catia_solve_task16_isolate_green` and matching
+`catia_taskNN_report` tools), plus contest-specific tools bolted onto
+`assembly.py` (`catia_rebuild_task02_product`), `measurement.py`
+(`catia_task06_debug_guides`), and `document.py` (`catia_close_document_by_path`), plus
+`catia_mcp/tools/saw.py` (`catia_design_circular_saw` — its own `DEFAULTS` default to a
+`CATIA_2026_LADUGA\08\...` path, confirming it's a contest-task solver, not a
+general-purpose GSD primitive). **This is the CATIA_2026_LADUGA contest-solving
+initiative** (see the user's own task-folder rules — tracked outside this repo's docs,
+not in PLAN.md) and is **intentionally out of this document's scope**: it shares
+nothing with the wheel/GSD surfacing work below and isn't mentioned further here. It's
+called out only so the tool counts elsewhere in this file (and in `README.md`, which is
+separately stale) aren't mistaken for GSD-only numbers — see the note on tool counts in
+the module inventory below.
+
+All of that landed in one commit (`9be2035`, "feat: add parametric circular saw blade
+builder for CATIA V5") whose message describes only the saw blade builder but whose
+diff also added `contest.py` in full and touched `assembly.py` (+650 lines),
+`document.py` (+94), `drawing.py` (+314), `knowledge.py` (+162), `measurement.py`
+(+439), `part_design.py` (+427), and `part_design_advanced.py` (+118) — worth knowing
+if bisecting a regression in any of those files turns up this commit; the diff is far
+larger than the message suggests. It did not touch `wheel.py` or the core
+wireframe/surface GSD modules, so it has no bearing on items 1-16 above.
+
+Two of the files it touched did gain genuinely GSD-relevant tools alongside the
+contest-scoped growth, and those ARE in scope for this document — folded into the
+module inventory below: `catia_build_slinky_from_points` (`part_design_advanced.py`)
+and `catia_fill_drawing_bom` (`drawing.py`). Neither has a live-verification note
+anywhere (commit message only covers the saw blade's own unit tests) — treat both as
+**unverified against live CATIA** until proven otherwise, same status as the rest of
+Open Work item 1's todo list.
 
 A remote-restart helper now exists and is **live-verified (2026-07-14)**:
 [`scripts/restart_remote_catia_mcp.ps1`](../scripts/restart_remote_catia_mcp.ps1)
@@ -105,10 +141,16 @@ and reference creation.
 ### `part_design_advanced.py` — surface → solid, advanced fillets
 `catia_close_surface`, `catia_thick_surface`, `catia_sew_surface`, `catia_split_solid`,
 `catia_face_fillet`, `catia_tritangent_fillet`, `catia_variable_fillet`,
-`catia_advanced_draft`
+`catia_advanced_draft`, `catia_build_slinky_from_points` (added since — builds a solid
+slinky spring from explicit guide points + a circular wire profile; **unverified live**,
+see the scope note above)
 
 ### `knowledge.py` — parametric family
-`catia_create_parameter`, `catia_create_formula`, `catia_create_design_table`
+`catia_create_parameter`, `catia_create_formula`, `catia_create_design_table`,
+`catia_copy_parameter_as_link`, `catia_list_relations`, `catia_upsert_formula` (the
+latter three added since; not individually live-verified — the module inventory always
+listed `catia_create_design_table` as implemented, so Open Work item 6 below means
+"unverified," not "not yet coded")
 
 ### `wheel.py` — composite orchestration tool
 `catia_design_wheel` — a single high-level tool taking `rim_diameter`, `rim_width`,
@@ -118,8 +160,14 @@ flange height, rim/spoke thickness, draft angle, fillet radius, valve/lug hole
 diameters, material density) and export options. Intended to chain the primitive
 tools above into one call for the common case.
 
-**Total registered tools:** 63 across all modules (verify with `tools/list` — see
-DEPLOYMENT.md for how to query the live server).
+**Total registered tools:** 63 at the time this line was first written; the server now
+registers 136 (verify with `tools/list` — see DEPLOYMENT.md for how to query the live
+server). The 63→136 growth is **not** all GSD work: about 21 of those tools
+(`contest.py`'s 15, plus `catia_design_circular_saw`, `catia_rebuild_task02_product`,
+`catia_task06_debug_guides`, `catia_close_document_by_path`, and the two additions
+folded into the inventory above) belong to the CATIA_2026_LADUGA contest-solving
+initiative described in the scope note at the top of this document, not to the GSD/wheel
+extension this plan tracks.
 
 ## Open work
 
@@ -365,8 +413,9 @@ DEPLOYMENT.md for how to query the live server).
       `Center_Bore_And_Lugs`; CATIA reported 3,145,029.9 mm3 and 8.49 kg. Isometric,
       side, and front views visually confirmed the axial crown, ten evenly patterned
       tapered spokes, hub/rim intersections, bore, and five lug holes. The
-      `Spoke_Construction` geometrical set remains visible in this first version, so
-      hiding construction geometry by default is a cosmetic follow-up.
+      `Spoke_Construction` geometrical set was initially visible. It is now put in
+      No Show mode after the final update (live-verified 2026-07-19), so construction
+      geometry does not obstruct the default wheel view.
     - **Valve hole is implemented and verified live against `.42` (2026-07-14).**
       The wheel validator places one radial drilling on the flat drop-center wall,
       maintains 2 mm axial clearance from the profile transitions and the nearest
@@ -503,16 +552,20 @@ DEPLOYMENT.md for how to query the live server).
       edge fillet solves by both index and nearest_point (`EdgeFillet.1`/`.2`), and a
       varying fillet with no imposed vertices solves too. This is the completion of the
       selection fix and unblocks all edge-based styling.
-    - **[Still open — solver semantics, not plumbing] Two refinements remain:**
-      - `catia_variable_fillet` **with** `variations`: `AddImposedVertex` still `E_FAIL`s.
-        A box-corner `vertex` reference is apparently not accepted as an imposed vertex on
-        the filleted edge; imposed vertices likely need a point genuinely on the edge (e.g.
-        a `PointOnCurve`), not an adjacent topological vertex. The no-variation varying
-        fillet works, so this is isolated to the imposed-vertex step.
-      - `catia_advanced_draft`: `AddNewDraft` constructs, but `UpdateObject` `E_FAIL`s even
-        with the fixed face references and a real planar-face neutral. Draft-specific
-        solver semantics (neutral/parting/pull relationship, or the drafted face must be
-        adjacent to the neutral face) still to work out.
+    - **[FIXED + LIVE-VERIFIED 2026-07-19] varying-fillet and advanced-draft solver
+      semantics.** `catia_variable_fillet` now accepts variation `position` values from
+      0 to 1 and creates real `PointOnCurve` controls before
+      the fillet. Passing an adjacent topological box vertex to `AddImposedVertex` still
+      `E_FAIL`s even when its BRep neighbours prove that it belongs to the selected edge;
+      a HybridShape point genuinely on the edge is the solver-valid input on this seat.
+      Live smoke: one Pad edge with controls at 25%/75%, radii 2/5 mm, updated as
+      `Item14_VariableFillet_Smoke`. For `catia_advanced_draft`, omitting `parting` now
+      supplies an empty CATIA Reference instead of incorrectly substituting the neutral
+      face; the domain pull direction is set explicitly and additional `faces` are added
+      through `DraftDomain.AddFaceToDraft`. Live smoke: an adjacent Pad side face drafted
+      5 degrees about a planar Pad limit face along +Z, updated as
+      `Item14_AdvancedDraft_Smoke`. Both tests are reproducible with
+      `python scripts/smoke_item14.py`; scratch documents are closed without saving.
     - **[WIRED INTO THE WHEEL + LIVE-VERIFIED] constant spoke-root fillet phase.**
       `catia_design_wheel` now runs a best-effort, **non-fatal** `_apply_spoke_fillets`
       phase after the hub: for each spoke it selects a junction edge by `nearest_point` at
@@ -554,20 +607,37 @@ DEPLOYMENT.md for how to query the live server).
       open documents by normalized `FullName` and, on a match, activates and reuses the
       existing document instead of calling `Documents.Open` again. Verified live: reopening
       the already-open wheel returned "already open; reused" in ~2 s (was 120 s+ hang).
-    - **Next:** the styling phase's core is delivered and QA'd. Remaining, in rough order:
-      (1) the imposed-vertex varying fillet (`AddImposedVertex` `E_FAIL`) and advanced-draft
-      solver semantics, if variable blends / casting draft are wanted in the composite;
-      (2) cosmetic — hide the `Spoke_Construction` geometrical set by default; (3) optional
+    - **Historical next-step note (resolved below):** the styling phase's primitives are delivered and live-verified. Remaining,
+      in rough order: (1) cosmetic — hide the `Spoke_Construction` geometrical set by
+      default; (2) optional
       zoomed-junction capture / a camera-zoom tool for close-up QA (the A/B volume check
       already confirmed the fillets are correct concave root blends).
+    - **[FIXED + LIVE-VERIFIED] Wheel construction visibility.**
+      `catia_design_wheel` now puts `Spoke_Construction` into No Show after all dependent
+      Part Design work completes and before saving. Live smoke on `.42` passed on
+      2026-07-19 with `python scripts/smoke_wheel_visibility.py`: the built wheel reported
+      a complete `construction_visibility` phase for `Spoke_Construction`, then its
+      temporary CATPart closed without saving.
+    - **[FIXED + LIVE-VERIFIED] Close-up camera zoom for QA.** `catia_zoom_view`
+      adds deterministic CATIA viewer zoom with an `in`/`out` direction and 1-20 steps.
+      Use it after `catia_set_view` and `catia_fit_all`, then call `catia_screenshot` for
+      a reproducible close-up. Live smoke on `.42` passed on 2026-07-19 with
+      `python scripts/smoke_zoom_view.py`: a temporary Pad was fit in front view,
+      zoomed in three steps and captured as a valid 168,330-byte JPEG (FFD8 signature),
+      then the temporary CATPart closed without saving.
     - **Deployed to `.42` this session (all with `.bak` backups + verified SHA-256):**
       `_geometry.py` (selection fix + reference-object fix — verified working),
       `part_design_advanced.py` (varying-fillet + advanced-draft signatures),
       `part_design.py` (fillet edge-ref — verified working). None committed to git yet.
+    - **Deployed to `.42` on 2026-07-19:** the final `part_design_advanced.py` was
+      synchronized directly and matched local SHA-256
+      `ABA4F59F6DB53213CD6B4EEE5D24E35758B913816DAFBE7B18C8259586144F01`.
+      MCP restarted as PID 35748 in interactive session 8; authenticated initialize
+      returned HTTP 200 before the final two-tool smoke passed.
 
 15. **Drawing (CATDrawing) tools — implemented and live-verified 2026-07-15.** New
     `catia_mcp/tools/drawing.py` (`DrawingTools`, registered in `server.py`; published tool
-    count 95 → 103) generates associative 2D drawings from an open 3D part. Eight tools,
+    count 95 → 103 at the time) generates associative 2D drawings from an open 3D part. Eight tools,
     all exercised live against `.42` on the lofted wheel: `catia_new_drawing` (sheet
     paper/orientation/scale), `catia_drawing_base_view` (front/back/top/bottom/left/right/
     iso), `catia_drawing_projection_view`, `catia_drawing_section_view`,
@@ -578,6 +648,12 @@ DEPLOYMENT.md for how to query the live server).
     `from_part` drawing were built, screenshotted (JPEG), and PDF-exported; the section
     view shows the real barrel/hub cross-section and the detail view a magnified region.
     Scope excluded (deferred): dimensions, text annotations, DXF.
+
+    A ninth tool, `catia_fill_drawing_bom` (fills an existing drawing's BOM/specification
+    table, matching rows by component name), was added later in the bundled `9be2035`
+    commit described in the scope note at the top of this file. It's genuinely GSD/drawing
+    scope, unlike the rest of that commit, but has no live-verification record — treat it
+    as unverified.
 
     Method/behaviour drift found and fixed live (same class as the 3D gotchas):
     - **3D link is `GenerativeBehavior.Document = part_doc`, not `GenerativeLinks.AddLink`.**

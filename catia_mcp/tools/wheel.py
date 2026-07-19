@@ -480,6 +480,22 @@ class WheelTools:
         except Exception:
             pass
 
+    def _set_visibility(self, obj: Any, show: bool) -> bool:
+        """Put a CATIA object in Show or No Show mode through the selection."""
+        selection = self.conn.hso
+        try:
+            selection.Clear()
+            selection.Add(obj)
+            selection.VisProperties.SetShow(1 if show else 0)
+            return True
+        except Exception:
+            return False
+        finally:
+            try:
+                selection.Clear()
+            except Exception:
+                pass
+
     def _build_spoke_solid(
         self,
         part: Any,
@@ -768,6 +784,19 @@ class WheelTools:
             }
         )
         part.Update()
+        if self._set_visibility(construction, show=False):
+            report["phases"].append(
+                {
+                    "name": "construction_visibility",
+                    "status": "complete",
+                    "feature": construction.Name,
+                    "note": "Spoke construction geometry is hidden by default.",
+                }
+            )
+        else:
+            report["warnings"].append(
+                "Spoke construction geometry could not be hidden; it remains visible."
+            )
         self.conn.refresh_display()
         report["warnings"].append(
             "Back-cavity optimization, casting draft and final fillet selection require live topology qualification for the target CATIA release."

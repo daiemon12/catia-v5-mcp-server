@@ -301,13 +301,26 @@ automation and file I/O:
   `C:\Users\sup02\Documents\MCP_Wheel_Valve_Hole_20260714_123338.CATPart`.
   Its PartBody ends with `Valve_Hole`; CATIA updated and saved without error, and the
   measured 802.4 mm3 volume reduction matches a diameter 11.3 x 8 mm cylinder.
-  This does not imply that every GSD tool is verified: `catia_sew_surface`, variable
-  fillet, and advanced draft still require individual live smoke tests.
+  This does not imply that every GSD tool is verified: `catia_sew_surface` still requires
+  an individual live smoke test. Variable fillet controls and advanced draft were both
+  live-verified on 2026-07-19 with `python scripts/smoke_item14.py`; see item 14 in
+  `PLAN.md` for the solver-valid PointOnCurve and empty-parting-reference semantics.
+- **Wheel construction visibility** - live-verified on 2026-07-19 with
+  `python scripts/smoke_wheel_visibility.py`. `catia_design_wheel` now sets the
+  `Spoke_Construction` geometrical set to No Show after building the wheel; the live
+  report confirmed its `construction_visibility` phase before the temporary CATPart
+  was closed without saving.
 - **View/screenshot** — `catia_fit_all` and standard view changes work.
   `catia_screenshot` now picks the capture format from the file extension and, because
   CATIA's API has no PNG format, writes a `.png` request as JPEG with a corrected `.jpg`
   path (verified live 2026-07-14 — the returned path reflects the real file). Earlier
   builds' EMF-under-`.png` files predate this fix.
+- **Close-up camera zoom** - `catia_zoom_view` is live-verified on 2026-07-19 with
+  `python scripts/smoke_zoom_view.py`. The smoke fit a temporary Pad in front view,
+  performed three `Viewer.ZoomIn` calls and captured
+  `C:\Users\sup02\Documents\CATIA_MCP_Zoom_Smoke.jpg`; the resulting file was a
+  168,330-byte JPEG with the `FFD8` signature. The temporary CATPart was closed without
+  saving.
 - **`catia_open_document` already-open handling** — CATIA's `Documents.Open` raises a
   blocking modal if the target document is already open in the session. `catia_open_document`
   now guards against this: it scans open documents by path and reuses/activates a match

@@ -124,6 +124,39 @@ def test_validation_does_not_connect_to_catia() -> None:
     assert connection.app is None
 
 
+def test_wheel_hides_construction_geoset_through_selection() -> None:
+    class VisProperties:
+        def __init__(self) -> None:
+            self.show = None
+
+        def SetShow(self, show: int) -> None:
+            self.show = show
+
+    class Selection:
+        def __init__(self) -> None:
+            self.clears = 0
+            self.added = None
+            self.VisProperties = VisProperties()
+
+        def Clear(self) -> None:
+            self.clears += 1
+
+        def Add(self, obj: object) -> None:
+            self.added = obj
+
+    class Connection:
+        def __init__(self) -> None:
+            self.hso = Selection()
+
+    connection = Connection()
+    construction = object()
+
+    assert WheelTools(connection)._set_visibility(construction, show=False) is True  # type: ignore[arg-type]
+    assert connection.hso.added is construction
+    assert connection.hso.VisProperties.show == 0
+    assert connection.hso.clears == 2
+
+
 def test_rim_profile_has_expected_landmarks_and_uniform_thickness() -> None:
     values = WheelTools.validate(VALID)
     points = WheelTools._rim_profile_points(values)
@@ -349,12 +382,20 @@ def test_export_tools_use_connection_active_viewer() -> None:
             self.Viewpoint3D = Viewpoint()
             self.captured = None
             self.reframe_calls = 0
+            self.zoom_in_calls = 0
+            self.zoom_out_calls = 0
 
         def CaptureToFile(self, fmt: int, path: str) -> None:
             self.captured = (fmt, path)
 
         def Reframe(self) -> None:
             self.reframe_calls += 1
+
+        def ZoomIn(self) -> None:
+            self.zoom_in_calls += 1
+
+        def ZoomOut(self) -> None:
+            self.zoom_out_calls += 1
 
     class Connection:
         def __init__(self) -> None:
@@ -369,11 +410,17 @@ def test_export_tools_use_connection_active_viewer() -> None:
     shot = tools.execute("catia_screenshot", {"file_path": "C:/tmp/wheel.png"})
     view = tools.execute("catia_set_view", {"view": "right"})
     fit = tools.execute("catia_fit_all", {})
+    zoom_in = tools.execute("catia_zoom_view", {"direction": "in", "steps": 3})
+    zoom_out = tools.execute("catia_zoom_view", {"direction": "out"})
 
-    assert conn.active_viewer.captured == (1, "C:\\tmp\\wheel.png")
+    assert conn.active_viewer.captured == (5, "C:\\tmp\\wheel.jpg")
     assert conn.active_viewer.Viewpoint3D.sight == [-1, 0, 0]
     assert conn.active_viewer.Viewpoint3D.up == [0, 1, 0]
     assert conn.active_viewer.reframe_calls == 2
-    assert "Screenshot saved" in shot
+    assert conn.active_viewer.zoom_in_calls == 3
+    assert conn.active_viewer.zoom_out_calls == 1
+    assert shot == "Screenshot saved to C:\\tmp\\wheel.jpg"
     assert view == "View set to: right"
     assert fit == "View fitted to all geometry"
+    assert zoom_in == "View zoomed in by 3 steps"
+    assert zoom_out == "View zoomed out by 1 step"

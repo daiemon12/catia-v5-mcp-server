@@ -122,6 +122,29 @@ class ExportTools:
                     "properties": {},
                 },
             },
+            {
+                "name": "catia_zoom_view",
+                "description": (
+                    "Zoom the current 3D view in or out by a fixed number of CATIA viewer "
+                    "steps. Use after catia_set_view/catia_fit_all for repeatable close-up QA."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "direction": {
+                            "type": "string",
+                            "enum": ["in", "out"],
+                            "default": "in",
+                        },
+                        "steps": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 20,
+                            "default": 1,
+                        },
+                    },
+                },
+            },
         ]
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
@@ -138,6 +161,10 @@ class ExportTools:
                 return self._set_view(arguments["view"])
             case "catia_fit_all":
                 return self._fit_all()
+            case "catia_zoom_view":
+                return self._zoom_view(
+                    arguments.get("direction", "in"), arguments.get("steps", 1)
+                )
             case _:
                 raise ValueError(f"Unknown export tool: {tool_name}")
 
@@ -249,3 +276,16 @@ class ExportTools:
         viewer = self.conn.active_viewer
         viewer.Reframe()
         return "View fitted to all geometry"
+
+    def _zoom_view(self, direction: str, steps: int) -> str:
+        if direction not in ("in", "out"):
+            raise ValueError("direction must be 'in' or 'out'")
+        if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 20:
+            raise ValueError("steps must be an integer between 1 and 20")
+
+        self.conn.ensure_connected()
+        viewer = self.conn.active_viewer
+        zoom = viewer.ZoomIn if direction == "in" else viewer.ZoomOut
+        for _ in range(steps):
+            zoom()
+        return f"View zoomed {direction} by {steps} step{'s' if steps != 1 else ''}"

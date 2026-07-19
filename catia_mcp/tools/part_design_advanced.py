@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
@@ -87,10 +88,24 @@ class AdvancedPartDesignTools:
                             "type": "object",
                             "properties": {
                                 "vertex": REF_SCHEMA,
+                                "position": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                },
                                 "radius": {"type": "number", "exclusiveMinimum": 0},
                             },
-                            "required": ["vertex", "radius"],
+                            "required": ["radius"],
+                            "oneOf": [
+                                {"required": ["vertex"]},
+                                {"required": ["position"]},
+                            ],
+                            "additionalProperties": False,
                         },
+                    },
+                    "control_geoset": {
+                        "type": "string",
+                        "default": "Variable_Fillet_Controls",
                     },
                     "name": {"type": "string"},
                 },
@@ -163,12 +178,39 @@ class AdvancedPartDesignTools:
 
     @classmethod
     def _pull_vector(cls, spec: Any) -> tuple[float, float, float]:
-        """Resolve a draft pull direction into raw (x, y, z) doubles."""
+        """Resolve and normalize a draft pull direction."""
         if isinstance(spec, dict) and {"x", "y", "z"} <= spec.keys():
-            return float(spec["x"]), float(spec["y"]), float(spec["z"])
-        if isinstance(spec, str) and spec.lower() in cls._PULL_NORMALS:
-            return cls._PULL_NORMALS[spec.lower()]
-        raise ValueError("pull_direction must be 'xy'/'yz'/'zx' or {'x':, 'y':, 'z':}")
+            vector = float(spec["x"]), float(spec["y"]), float(spec["z"])
+        elif isinstance(spec, str) and spec.lower() in cls._PULL_NORMALS:
+            vector = cls._PULL_NORMALS[spec.lower()]
+        else:
+            raise ValueError("pull_direction must be 'xy'/'yz'/'zx' or {'x':, 'y':, 'z':}")
+        length = math.sqrt(sum(value * value for value in vector))
+        if length <= 1e-12:
+            raise ValueError("pull_direction must be a non-zero vector")
+        return tuple(value / length for value in vector)
+
+    def _variation_control(
+        self,
+        edge_ref: Any,
+        variation: dict[str, Any],
+        index: int,
+        geoset_name: str,
+    ) -> Any:
+        if "vertex" in variation:
+            return self.geo.resolve(variation["vertex"])
+
+        position = variation["position"]
+        point = self.geo.hsf.AddNewPointOnCurveFromPercent(edge_ref, float(position), False)
+        point.Name = f"VariableFillet_Control_{index:02d}"
+        self.geo.geoset(geoset_name, create=True).AppendHybridShape(point)
+        self.geo.part.UpdateObject(point)
+        return self.geo.part.CreateReferenceFromObject(point)
+
+    @staticmethod
+    def _draft_domain(feature: Any) -> Any:
+        domains = feature.DraftDomains
+        return domains.Item(1)
 
     def _d(
         self, name: str, description: str, props: dict[str, Any], required: list[str]
@@ -204,14 +246,23 @@ class AdvancedPartDesignTools:
             # "...VariableRadius") and takes 4 args: edge, propagation mode,
             # variation mode, default radius. The 3-arg "...VariableRadius" name
             # does not resolve on this install (verified live 2026-07-14). Per-
-            # vertex radii are set with AddImposedVertex, not
+            # control radii are set with AddImposedVertex, not
             # AddRadiusVariationAtVertex. 1 = catTangencyFilletEdgePropagation,
             # 1 = catCubicFilletVariation.
-            feature = sf.AddNewSolidEdgeFilletWithVaryingRadius(
-                r(args["edge"]), 1, 1, args["radius"]
-            )
-            for variation in args.get("variations", []):
-                feature.AddImposedVertex(r(variation["vertex"]), variation["radius"])
+            edge_ref = r(args["edge"])
+            controls = [
+                self._variation_control(
+                    edge_ref,
+                    variation,
+                    index,
+                    args.get("control_geoset") or "Variable_Fillet_Controls",
+                )
+                for index, variation in enumerate(args.get("variations", []), start=1)
+            ]
+            part.InWorkObject = self.conn.get_active_part_body()
+            feature = sf.AddNewSolidEdgeFilletWithVaryingRadius(edge_ref, 1, 1, args["radius"])
+            for variation, control_ref in zip(args.get("variations", []), controls):
+                feature.AddImposedVertex(control_ref, variation["radius"])
         elif tool_name == "catia_face_fillet":
             feature = sf.AddNewSolidFaceFillet(
                 r(args["face1"]), r(args["face2"]), 1, args["radius"]
@@ -228,17 +279,24 @@ class AdvancedPartDesignTools:
             # passing a reference is why the old 6-arg call failed with
             # "Member not found" (verified live 2026-07-14). Enum values:
             # neutralMode 0=None/1=Smooth, mode 0=Standard/1=ReflectKeepFace,
-            # multiselection 0=None.
+            # multiselection 0=None. A missing parting element must be an empty
+            # Reference: substituting the neutral face changes this into a
+            # parting-element draft and can leave an otherwise valid basic
+            # draft unsolvable at UpdateObject.
             faces = args["faces"]
             dir_x, dir_y, dir_z = self._pull_vector(args["pull_direction"])
             neutral_mode = 1 if args.get("propagation") == "smooth" else 0
             draft_mode = 1 if args.get("mode") == "reflect_line" else 0
-            parting = args.get("parting", args["neutral"])
+            parting_ref = (
+                r(args["parting"])
+                if args.get("parting") is not None
+                else part.CreateReferenceFromName("")
+            )
             feature = sf.AddNewDraft(
                 r(faces[0]),
                 r(args["neutral"]),
                 neutral_mode,
-                r(parting),
+                parting_ref,
                 dir_x,
                 dir_y,
                 dir_z,
@@ -246,6 +304,10 @@ class AdvancedPartDesignTools:
                 args["angle"],
                 0,
             )
+            domain = self._draft_domain(feature)
+            domain.SetPullingDirection(dir_x, dir_y, dir_z)
+            for face in faces[1:]:
+                domain.AddFaceToDraft(r(face))
         else:
             raise ValueError(f"Unknown advanced Part Design tool: {tool_name}")
         if args.get("name"):

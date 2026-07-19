@@ -6,65 +6,47 @@ This test does NOT require CATIA V5 — it only checks that:
 3. Tool definitions are valid
 """
 
+import importlib
 import sys
 
 
 def test_imports():
     """Test that all modules import without errors."""
     print("Testing imports...")
-    from catia_mcp.connection import CATIAConnection
-    from catia_mcp.tools.document import DocumentTools
-    from catia_mcp.tools.sketcher import SketcherTools
-    from catia_mcp.tools.part_design import PartDesignTools
-    from catia_mcp.tools.assembly import AssemblyTools
-    from catia_mcp.tools.measurement import MeasurementTools
-    from catia_mcp.tools.export import ExportTools
-    from catia_mcp.tools.geoset import GeosetTools
-    from catia_mcp.tools.wireframe import WireframeTools
-    from catia_mcp.tools.surface import SurfaceTools
-    from catia_mcp.tools.part_design_advanced import AdvancedPartDesignTools
-    from catia_mcp.tools.knowledge import KnowledgeTools
-    from catia_mcp.tools.wheel import WheelTools
+    for module_name in (
+        "catia_mcp.connection",
+        "catia_mcp.tools.document",
+        "catia_mcp.tools.sketcher",
+        "catia_mcp.tools.part_design",
+        "catia_mcp.tools.assembly",
+        "catia_mcp.tools.measurement",
+        "catia_mcp.tools.export",
+        "catia_mcp.tools.geoset",
+        "catia_mcp.tools.wireframe",
+        "catia_mcp.tools.surface",
+        "catia_mcp.tools.part_design_advanced",
+        "catia_mcp.tools.knowledge",
+        "catia_mcp.tools.wheel",
+        "catia_mcp.tools.saw",
+        "catia_mcp.tools.drawing",
+        "catia_mcp.tools.contest",
+    ):
+        importlib.import_module(module_name)
     print("  All modules imported successfully")
 
 
-def test_tool_definitions():
-    """Test that all tool modules return valid definitions."""
+def _tool_definitions_count() -> int:
+    """Return the validated total number of registered tool definitions."""
     print("Testing tool definitions...")
-    from catia_mcp.connection import CATIAConnection
-    from catia_mcp.tools.document import DocumentTools
-    from catia_mcp.tools.sketcher import SketcherTools
-    from catia_mcp.tools.part_design import PartDesignTools
-    from catia_mcp.tools.assembly import AssemblyTools
-    from catia_mcp.tools.measurement import MeasurementTools
-    from catia_mcp.tools.export import ExportTools
-    from catia_mcp.tools.geoset import GeosetTools
-    from catia_mcp.tools.wireframe import WireframeTools
-    from catia_mcp.tools.surface import SurfaceTools
-    from catia_mcp.tools.part_design_advanced import AdvancedPartDesignTools
-    from catia_mcp.tools.knowledge import KnowledgeTools
-    from catia_mcp.tools.wheel import WheelTools
+    from catia_mcp.server import CATIAMCPServer
 
-    conn = CATIAConnection()
-    modules = {
-        "Document": DocumentTools(conn),
-        "Sketcher": SketcherTools(conn),
-        "Part Design": PartDesignTools(conn),
-        "Assembly": AssemblyTools(conn),
-        "Measurement": MeasurementTools(conn),
-        "Export": ExportTools(conn),
-        "Geoset": GeosetTools(conn),
-        "Wireframe": WireframeTools(conn),
-        "Surface": SurfaceTools(conn),
-        "Advanced Part Design": AdvancedPartDesignTools(conn),
-        "Knowledgeware": KnowledgeTools(conn),
-        "Wheel": WheelTools(conn),
-    }
+    modules = CATIAMCPServer()._tool_modules
 
     total_tools = 0
     all_tool_names = set()
 
-    for module_name, module in modules.items():
+    for module in modules:
+        module_name = type(module).__name__
         tools = module.get_tool_definitions()
         print(f"  {module_name}: {len(tools)} tools")
 
@@ -91,19 +73,29 @@ def test_tool_definitions():
             total_tools += 1
 
     print(f"\n  Total: {total_tools} tools registered")
-    print(f"  All tool names unique: yes")
-    print(f"  All tools follow 'catia_*' naming: yes")
+    print("  All tool names unique: yes")
+    print("  All tools follow 'catia_*' naming: yes")
     return total_tools
 
 
-def test_server_creation():
-    """Test that the MCP server can be created (without running)."""
+def test_tool_definitions():
+    """Test that all tool modules return valid definitions."""
+    assert _tool_definitions_count() > 0
+
+
+def _server_tool_count() -> int:
+    """Return the number of tools routed by a newly created MCP server."""
     print("Testing server creation...")
     from catia_mcp.server import CATIAMCPServer
     server = CATIAMCPServer()
     tool_count = len(server._tool_router)
     print(f"  Server created with {tool_count} tools in router")
     return tool_count
+
+
+def test_server_creation():
+    """Test that the MCP server can be created (without running)."""
+    assert _server_tool_count() > 0
 
 
 def main():
@@ -116,10 +108,10 @@ def main():
         test_imports()
         print()
 
-        total_tools = test_tool_definitions()
+        total_tools = _tool_definitions_count()
         print()
 
-        router_count = test_server_creation()
+        router_count = _server_tool_count()
         print()
 
         assert total_tools == router_count, (
