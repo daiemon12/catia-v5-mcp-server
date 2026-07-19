@@ -30,10 +30,22 @@ DEFAULTS = {
     "material_density": 2700.0,
     "export_step": True,
     "apply_spoke_fillets": True,
+    "fork_fraction": 0.42,
 }
 
 
 class WheelTools:
+    # y_fork spoke geometry ratios (of spoke_thickness), fixed rather than
+    # user-tunable to keep the schema small. The branch-root width/lateral
+    # combination is chosen so a branch's root cross-section stays nested
+    # inside the trunk's fork cross-section at the same radius, guaranteeing
+    # the 3D overlap Part Design needs to implicitly fuse them (the same
+    # trick _spoke_sections already uses to fuse the spoke onto the rim).
+    _Y_TRUNK_FORK_WIDTH_RATIO = 0.80
+    _Y_BRANCH_ROOT_WIDTH_RATIO = 0.55
+    _Y_BRANCH_TIP_WIDTH_RATIO = 0.34
+    _Y_BRANCH_ROOT_LATERAL_RATIO = 0.12
+
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
 
@@ -47,7 +59,14 @@ class WheelTools:
             "bolt_count": {"type": "integer", "minimum": 3, "maximum": 10},
             "center_bore": positive,
             "spoke_count": {"type": "integer", "minimum": 3, "maximum": 30},
-            "spoke_style": {"type": "string", "enum": ["simple_lofted"]},
+            "spoke_style": {"type": "string", "enum": ["simple_lofted", "y_fork"]},
+            "fork_fraction": {
+                "type": "number",
+                "minimum": 0.2,
+                "maximum": 0.7,
+                "default": DEFAULTS["fork_fraction"],
+            },
+            "fork_spread": {"type": "number", "exclusiveMinimum": 0},
             "hub_thickness": positive,
             "flange_height": positive,
             "flange_lip_width": {**positive, "default": DEFAULTS["flange_lip_width"]},
@@ -83,7 +102,7 @@ class WheelTools:
         return [
             {
                 "name": "catia_design_wheel",
-                "description": "Create a validated parametric cast-style wheel using the simple_lofted spoke family. Requires Part Design and GSD licenses.",
+                "description": "Create a validated parametric cast-style wheel using the simple_lofted (single straight spoke) or y_fork (each spoke forks into two branches near the rim, mesh/BBS-style) spoke family. Requires Part Design and GSD licenses.",
                 "inputSchema": object_schema(props, required),
             }
         ]
@@ -91,8 +110,8 @@ class WheelTools:
     @staticmethod
     def validate(arguments: dict[str, Any]) -> dict[str, Any]:
         values = {**DEFAULTS, **arguments}
-        if values.get("spoke_style") != "simple_lofted":
-            raise ValueError("V1 supports only spoke_style='simple_lofted'")
+        if values.get("spoke_style") not in ("simple_lofted", "y_fork"):
+            raise ValueError("spoke_style must be 'simple_lofted' or 'y_fork'")
         for name in (
             "rim_diameter",
             "rim_width",
@@ -149,6 +168,35 @@ class WheelTools:
         pitch_at_hub = 2 * math.pi * hub_radius / values["spoke_count"]
         if values["spoke_thickness"] >= pitch_at_hub * 0.8:
             raise ValueError("spoke_thickness/spoke_count would cause spoke self-intersection")
+        if values["spoke_style"] == "y_fork":
+            if not 0.2 <= values["fork_fraction"] <= 0.7:
+                raise ValueError("fork_fraction must be between 0.2 and 0.7")
+            root_overlap = min(2.0, values["fillet_radius"] / 2)
+            rim_overlap = values["rim_thickness"] / 2
+            fork_root_radius = hub_radius - root_overlap
+            fork_rim_radius = inner_radius + rim_overlap
+            fork_radius = fork_root_radius + (fork_rim_radius - fork_root_radius) * values[
+                "fork_fraction"
+            ]
+            branch_tip_width = values["spoke_thickness"] * WheelTools._Y_BRANCH_TIP_WIDTH_RATIO
+            pitch_at_rim = 2 * math.pi * fork_rim_radius / values["spoke_count"]
+            clearance = 2.0
+            max_spread = pitch_at_rim / 2 - branch_tip_width / 2 - clearance
+            if max_spread <= 0:
+                raise ValueError(
+                    "spoke_count/spoke_thickness leave no room for y_fork branch tips "
+                    "at the rim"
+                )
+            fork_spread = values.get("fork_spread")
+            if fork_spread is None:
+                fork_spread = max_spread * 0.6
+            elif fork_spread > max_spread:
+                raise ValueError(
+                    "fork_spread is too large for spoke_count/rim_diameter; branch tips "
+                    "would intersect the neighboring spoke"
+                )
+            values["fork_radius"] = fork_radius
+            values["fork_spread"] = fork_spread
         values["inner_radius"] = inner_radius
         values["bead_seat_radius"] = bead_seat_radius
         values["drop_center_radius"] = drop_center_radius
@@ -270,6 +318,67 @@ class WheelTools:
         ]
 
     @staticmethod
+    def _y_fork_sections(
+        values: dict[str, Any],
+    ) -> tuple[list[dict[str, float]], list[dict[str, float]], list[dict[str, float]]]:
+        """Return (trunk, branch_left, branch_right) section lists for the y_fork
+        spoke style: a single trunk from the hub to the fork point, then two
+        branches from the fork point to their own point on the rim, offset
+        tangentially ("lateral") so they splay into a Y. The branch-root
+        sections are sized/offset to sit nested inside the trunk's fork-end
+        cross-section (same radius, narrower width) so the three lofted
+        solids overlap in 3D and Part Design fuses them into one lump, the
+        same overlap trick _spoke_sections uses to fuse the spoke onto the
+        hub/rim.
+        """
+        root_overlap = min(2.0, values["fillet_radius"] / 2)
+        rim_overlap = values["rim_thickness"] / 2
+        root_radius = values["hub_radius"] - root_overlap
+        rim_radius = values["inner_radius"] + rim_overlap
+        fork_radius = values["fork_radius"]
+        crown = max(
+            -values["hub_thickness"] / 3, min(values["offset"] * 0.35, values["hub_thickness"] / 3)
+        )
+        t = values["spoke_thickness"]
+        trunk = [
+            {
+                "radius": root_radius,
+                "width": t,
+                "depth": values["hub_thickness"] * 0.72,
+                "crown": 0.0,
+                "lateral": 0.0,
+            },
+            {
+                "radius": fork_radius,
+                "width": t * WheelTools._Y_TRUNK_FORK_WIDTH_RATIO,
+                "depth": values["hub_thickness"] * 0.5,
+                "crown": crown * 0.5,
+                "lateral": 0.0,
+            },
+        ]
+        branches = []
+        for side in (-1.0, 1.0):
+            branches.append(
+                [
+                    {
+                        "radius": fork_radius,
+                        "width": t * WheelTools._Y_BRANCH_ROOT_WIDTH_RATIO,
+                        "depth": values["hub_thickness"] * 0.5,
+                        "crown": crown * 0.5,
+                        "lateral": side * t * WheelTools._Y_BRANCH_ROOT_LATERAL_RATIO,
+                    },
+                    {
+                        "radius": rim_radius,
+                        "width": t * WheelTools._Y_BRANCH_TIP_WIDTH_RATIO,
+                        "depth": values["hub_thickness"] * 0.38,
+                        "crown": crown * 0.2,
+                        "lateral": side * values["fork_spread"],
+                    },
+                ]
+            )
+        return trunk, branches[0], branches[1]
+
+    @staticmethod
     def _spoke_guide_points(
         sections: list[dict[str, float]], side: float
     ) -> list[tuple[float, float, float]]:
@@ -277,7 +386,7 @@ class WheelTools:
         return [
             (
                 section["radius"],
-                side * section["width"] / 2,
+                section.get("lateral", 0.0) + side * section["width"] / 2,
                 section["crown"] + section["depth"] / 2,
             )
             for section in sections
@@ -287,14 +396,15 @@ class WheelTools:
     def _spoke_section_points(section: dict[str, float]) -> list[tuple[float, float, float]]:
         """Return global XYZ corner points for a closed rounded spline section."""
         half_width = section["width"] / 2
+        lateral = section.get("lateral", 0.0)
         z1 = section["crown"] - section["depth"] / 2
         z2 = section["crown"] + section["depth"] / 2
         radius = section["radius"]
         return [
-            (radius, -half_width, z1),
-            (radius, half_width, z1),
-            (radius, half_width, z2),
-            (radius, -half_width, z2),
+            (radius, lateral - half_width, z1),
+            (radius, lateral + half_width, z1),
+            (radius, lateral + half_width, z2),
+            (radius, lateral - half_width, z2),
         ]
 
     def execute(self, tool_name: str, args: dict[str, Any]) -> str:
@@ -370,6 +480,94 @@ class WheelTools:
         except Exception:
             pass
 
+    def _build_spoke_solid(
+        self,
+        part: Any,
+        hsf: Any,
+        construction: Any,
+        body: Any,
+        sections: list[dict[str, float]],
+        label: str,
+    ) -> Any:
+        """Build one capped, closed tube solid from a 2+-station section list
+        and fuse it onto the active body. Part Design implicitly unions a new
+        solid feature with a body's existing material wherever the two
+        overlap in 3D, which is what turns two or three of these tubes (e.g.
+        a y_fork trunk plus its two branches) into one connected lump."""
+        section_refs = []
+        guide_point_refs: dict[str, list[Any]] = {"Left": [], "Right": []}
+        for index, section in enumerate(sections, start=1):
+            point_refs = []
+            for point_index, xyz in enumerate(self._spoke_section_points(section), start=1):
+                point = hsf.AddNewPointCoord(*xyz)
+                self._try_rename(point, f"{label}_Section_{index}_Point_{point_index}")
+                construction.AppendHybridShape(point)
+                part.UpdateObject(point)
+                point_refs.append(part.CreateReferenceFromObject(point))
+
+            section_curve = hsf.AddNewSpline()
+            for point_ref in point_refs:
+                section_curve.AddPoint(point_ref)
+            section_curve.SetClosing(True)
+            self._try_rename(section_curve, f"{label}_Section_{index}")
+            construction.AppendHybridShape(section_curve)
+            part.UpdateObject(section_curve)
+            section_refs.append(part.CreateReferenceFromObject(section_curve))
+            guide_point_refs["Left"].append(point_refs[3])
+            guide_point_refs["Right"].append(point_refs[2])
+
+        guide_refs = []
+        for side_label in ("Left", "Right"):
+            spline = hsf.AddNewSpline()
+            for point_ref in guide_point_refs[side_label]:
+                spline.AddPoint(point_ref)
+            self._try_rename(spline, f"{label}_{side_label}_Guide")
+            construction.AppendHybridShape(spline)
+            part.UpdateObject(spline)
+            guide_refs.append(part.CreateReferenceFromObject(spline))
+
+        loft = hsf.AddNewLoft()
+        loft.SectionCoupling = 4
+        for section_ref in section_refs:
+            loft.AddSectionToLoft(section_ref, 1, None)
+        for guide_ref in guide_refs:
+            loft.AddGuide(guide_ref)
+        self._try_rename(loft, f"{label}_Loft")
+        construction.AppendHybridShape(loft)
+        part.UpdateObject(loft)
+
+        caps = []
+        for section_ref, cap_name in (
+            (section_refs[0], f"{label}_Root_Cap"),
+            (section_refs[-1], f"{label}_Tip_Cap"),
+        ):
+            cap = hsf.AddNewFill()
+            cap.AddBound(section_ref)
+            self._try_rename(cap, cap_name)
+            construction.AppendHybridShape(cap)
+            part.UpdateObject(cap)
+            caps.append(cap)
+
+        skin = hsf.AddNewJoin(
+            part.CreateReferenceFromObject(loft), part.CreateReferenceFromObject(caps[0])
+        )
+        skin.AddElement(part.CreateReferenceFromObject(caps[1]))
+        skin.SetConnex(True)
+        skin.SetManifold(1)
+        skin.SetSimplify(0)
+        skin.SetSuppressMode(0)
+        skin.SetDeviation(0.001)
+        skin.SetAngularToleranceMode(0)
+        self._try_rename(skin, f"{label}_Skin")
+        construction.AppendHybridShape(skin)
+        part.UpdateObject(skin)
+
+        part.InWorkObject = body
+        solid = part.ShapeFactory.AddNewCloseSurface(part.CreateReferenceFromObject(skin))
+        self._try_rename(solid, label)
+        part.UpdateObject(solid)
+        return solid
+
     def _build_geometry(self, v: dict[str, Any], report: dict[str, Any]) -> list[str]:
         """Build a conservative wheel solid; each phase updates before continuing."""
         part = self.conn.get_active_part()
@@ -406,79 +604,30 @@ class WheelTools:
         hsf = part.HybridShapeFactory
         construction = part.HybridBodies.Add()
         self._try_rename(construction, "Spoke_Construction")
-        sections = self._spoke_sections(v)
-        section_refs = []
-        guide_point_refs: dict[str, list[Any]] = {"Left": [], "Right": []}
-        for index, section in enumerate(sections, start=1):
-            point_refs = []
-            for point_index, xyz in enumerate(self._spoke_section_points(section), start=1):
-                point = hsf.AddNewPointCoord(*xyz)
-                self._try_rename(point, f"Spoke_Section_{index}_Point_{point_index}")
-                construction.AppendHybridShape(point)
-                part.UpdateObject(point)
-                point_refs.append(part.CreateReferenceFromObject(point))
 
-            section_curve = hsf.AddNewSpline()
-            for point_ref in point_refs:
-                section_curve.AddPoint(point_ref)
-            section_curve.SetClosing(True)
-            self._try_rename(section_curve, f"Spoke_Section_{index}")
-            construction.AppendHybridShape(section_curve)
-            part.UpdateObject(section_curve)
-            section_refs.append(part.CreateReferenceFromObject(section_curve))
-            guide_point_refs["Left"].append(point_refs[3])
-            guide_point_refs["Right"].append(point_refs[2])
-
-        guide_refs = []
-        for label in ("Left", "Right"):
-            spline = hsf.AddNewSpline()
-            for point_ref in guide_point_refs[label]:
-                spline.AddPoint(point_ref)
-            self._try_rename(spline, f"Spoke_{label}_Guide")
-            construction.AppendHybridShape(spline)
-            part.UpdateObject(spline)
-            guide_refs.append(part.CreateReferenceFromObject(spline))
-
-        loft = hsf.AddNewLoft()
-        loft.SectionCoupling = 4
-        for section_ref in section_refs:
-            loft.AddSectionToLoft(section_ref, 1, None)
-        for guide_ref in guide_refs:
-            loft.AddGuide(guide_ref)
-        self._try_rename(loft, "Spoke_Crown_Loft")
-        construction.AppendHybridShape(loft)
-        part.UpdateObject(loft)
-
-        caps = []
-        for section_ref, name in (
-            (section_refs[0], "Spoke_Root_Cap"),
-            (section_refs[-1], "Spoke_Rim_Cap"),
-        ):
-            cap = hsf.AddNewFill()
-            cap.AddBound(section_ref)
-            self._try_rename(cap, name)
-            construction.AppendHybridShape(cap)
-            part.UpdateObject(cap)
-            caps.append(cap)
-
-        skin = hsf.AddNewJoin(
-            part.CreateReferenceFromObject(loft), part.CreateReferenceFromObject(caps[0])
-        )
-        skin.AddElement(part.CreateReferenceFromObject(caps[1]))
-        skin.SetConnex(True)
-        skin.SetManifold(1)
-        skin.SetSimplify(0)
-        skin.SetSuppressMode(0)
-        skin.SetDeviation(0.001)
-        skin.SetAngularToleranceMode(0)
-        self._try_rename(skin, "Spoke_Closed_Skin")
-        construction.AppendHybridShape(skin)
-        part.UpdateObject(skin)
-
-        part.InWorkObject = body
-        spoke = part.ShapeFactory.AddNewCloseSurface(part.CreateReferenceFromObject(skin))
-        self._try_rename(spoke, "Lofted_Spoke")
-        part.UpdateObject(spoke)
+        if v["spoke_style"] == "y_fork":
+            trunk_sections, branch_left_sections, branch_right_sections = self._y_fork_sections(v)
+            solids = [
+                self._build_spoke_solid(
+                    part, hsf, construction, body, trunk_sections, "Y_Spoke_Trunk"
+                ),
+                self._build_spoke_solid(
+                    part, hsf, construction, body, branch_left_sections, "Y_Spoke_Branch_Left"
+                ),
+                self._build_spoke_solid(
+                    part, hsf, construction, body, branch_right_sections, "Y_Spoke_Branch_Right"
+                ),
+            ]
+            spoke_note = (
+                "Trunk lofted hub-to-fork, two branches lofted fork-to-rim and fused onto "
+                "the trunk by cross-section overlap, all three circularly patterned."
+            )
+        else:
+            sections = self._spoke_sections(v)
+            solids = [
+                self._build_spoke_solid(part, hsf, construction, body, sections, "Lofted_Spoke")
+            ]
+            spoke_note = "Three-section guided crown loft closed to a solid and circularly patterned."
 
         center = hsf.AddNewPointCoord(0, 0, 0)
         axis_start = hsf.AddNewPointCoord(0, 0, -1)
@@ -497,23 +646,26 @@ class WheelTools:
         construction.AppendHybridShape(axis)
         part.UpdateObject(axis)
 
-        part.InWorkObject = body
-        pattern = part.ShapeFactory.AddNewCircPattern(
-            spoke,
-            1,
-            v["spoke_count"],
-            0,
-            360.0 / v["spoke_count"],
-            1,
-            1,
-            part.CreateReferenceFromObject(center),
-            part.CreateReferenceFromObject(axis),
-            False,
-            0,
-            True,
-        )
-        self._try_rename(pattern, "Lofted_Spoke_Pattern")
-        part.UpdateObject(pattern)
+        patterns = []
+        for solid in solids:
+            part.InWorkObject = body
+            pattern = part.ShapeFactory.AddNewCircPattern(
+                solid,
+                1,
+                v["spoke_count"],
+                0,
+                360.0 / v["spoke_count"],
+                1,
+                1,
+                part.CreateReferenceFromObject(center),
+                part.CreateReferenceFromObject(axis),
+                False,
+                0,
+                True,
+            )
+            self._try_rename(pattern, f"{solid.Name}_Pattern")
+            part.UpdateObject(pattern)
+            patterns.append(pattern)
 
         sketch = body.Sketches.Add(part.CreateReferenceFromObject(origin.PlaneXY))
         self._try_rename(sketch, "Hub_Profile")
@@ -524,13 +676,15 @@ class WheelTools:
         self._try_rename(hub, "Wheel_Hub")
         hub.IsSymmetric = True
         part.UpdateObject(hub)
-        names.extend([spoke.Name, pattern.Name, hub.Name])
+        names.extend(solid.Name for solid in solids)
+        names.extend(pattern.Name for pattern in patterns)
+        names.append(hub.Name)
         report["phases"].append(
             {
                 "name": "hub_and_spokes",
                 "status": "complete",
-                "feature": pattern.Name,
-                "note": "Three-section guided crown loft closed to a solid and circularly patterned.",
+                "feature": patterns[-1].Name,
+                "note": spoke_note,
             }
         )
         # Spoke-root styling fillets. Best-effort and non-fatal: a dress-up
@@ -538,7 +692,8 @@ class WheelTools:
         # discard the built, valid solid - same policy as measurement/export.
         if v.get("apply_spoke_fillets", True):
             try:
-                filleted, radius, errors = self._apply_spoke_fillets(part, v)
+                pattern_names = [pattern.Name for pattern in patterns]
+                filleted, radius, errors = self._apply_spoke_fillets(part, v, pattern_names)
                 if filleted:
                     report["phases"].append(
                         {
@@ -620,7 +775,7 @@ class WheelTools:
         return names
 
     def _apply_spoke_fillets(
-        self, part: Any, v: dict[str, Any]
+        self, part: Any, v: dict[str, Any], pattern_names: list[str]
     ) -> tuple[int, float, list[str]]:
         """Round each spoke/hub junction with a constant-radius edge fillet.
 
@@ -628,7 +783,8 @@ class WheelTools:
         centerline at the hub radius, then lets CATIA's tangency propagation
         carry the fillet around the connected junction run. Returns
         (fillet_count, radius, errors); the caller treats any shortfall as a
-        non-fatal styling warning.
+        non-fatal styling warning. Only the hub/root junction is filleted -
+        for y_fork this means the trunk root, not the branch/rim junctions.
         """
         geo = GeometryContext(self.conn)
         sf = part.ShapeFactory
@@ -636,9 +792,10 @@ class WheelTools:
             v["fillet_radius"], v["rim_thickness"] * 0.5, v["spoke_thickness"] * 0.4
         )
         hub_radius = v["hub_radius"]
-        # The junction edges may be owned by either the hub pad or the spoke
-        # pattern depending on how CATIA assigned the shared boundary; try both.
-        candidate_features = ("Wheel_Hub", "Lofted_Spoke_Pattern")
+        # The junction edges may be owned by either the hub pad or one of the
+        # spoke pattern(s) depending on how CATIA assigned the shared boundary;
+        # try all of them.
+        candidate_features = ("Wheel_Hub", *pattern_names)
         filleted = 0
         errors: list[str] = []
         for i in range(v["spoke_count"]):

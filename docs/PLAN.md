@@ -599,6 +599,40 @@ DEPLOYMENT.md for how to query the live server).
       `gap` mm, not part-size aware — no bounding box available, see item 11); hiding the
       section/detail callout dressing if undesired.
 
+16. **Second spoke style: `y_fork` (mesh/Y-spoke) — implemented and live-verified
+    2026-07-16.** Closes item 7's "expand the spoke_style family" open work. Each spoke
+    now forks into two thinner branches partway to the rim (BBS-mesh look), requested by
+    the user against a reference image. Reuses every primitive `wheel.py` already proved
+    for `simple_lofted` — no new CATIA capability — just applies the section→spline→
+    loft→2 caps→join→`AddNewCloseSurface` pipeline (now extracted into
+    `_build_spoke_solid`) three times per spoke unit instead of once: one trunk (hub →
+    fork point) and two branches (fork point → their own point on the rim, offset
+    tangentially via a new `"lateral"` field on each section, plumbed through
+    `_spoke_section_points`/`_spoke_guide_points`). The branch-root cross-section is
+    sized/offset to sit nested inside the trunk's fork-end cross-section so the three
+    lofted solids overlap in 3D — Part Design's implicit add then fuses them into one Y
+    lump automatically, the same overlap trick the file already used to fuse the spoke
+    onto the hub/rim. Each of the three solids is then circularly patterned separately
+    (three `AddNewCircPattern` calls, identical center/axis/count/angle) since a Part
+    Design pattern only replicates the one feature it's given. New `validate()` inputs:
+    `fork_fraction` (0.2–0.7, default 0.42, where along hub→rim the fork happens) and
+    optional `fork_spread` (auto-computed from rim circumference/spoke_count when
+    omitted, with a clearance check against neighboring spokes' branch tips — same style
+    of self-intersection guard as the existing `spoke_thickness`/`spoke_count` check).
+    `_apply_spoke_fillets`'s candidate feature list generalized to try every pattern
+    feature actually built, not a hardcoded name.
+
+    **Live-verified first try, no fix cycle needed** (unusual for this file's history —
+    see items 3/8/9/14 for the fillet/loft/order bugs earlier styles needed): deployed
+    `wheel.py` to `.42` over SMB, restarted the remote server, then called
+    `catia_design_wheel` with `spoke_style="y_fork"`, `spoke_count=10`, the same
+    457.2/203.2/114.3/67.1 mm dimensions used throughout this doc. All 7 phases reported
+    `complete` (document, parameters, rim, hub_and_spokes, spoke_fillets 10/10 at R4mm,
+    mounting_features, valve_hole); saved `MCP_Wheel_YFork_20260716_173101.CATPart` +
+    `.stp`, volume 3,183,715 mm3 / 8.60 kg. ISO and front screenshots confirm the Y-fork
+    mesh pattern visually matches the reference image: ten trunks fork cleanly into two
+    branches each, forming the triangular rim-side windows.
+
 ## Risks
 
 - **Reference selection is the whole game** (see Open Work #2). This is where scripted

@@ -95,6 +95,7 @@ def test_new_tools_have_unique_routes_and_strict_schemas() -> None:
 
     by_name = {definition["name"]: definition for definition in definitions}
     wheel_properties = by_name["catia_design_wheel"]["inputSchema"]["properties"]
+    assert set(wheel_properties["spoke_style"]["enum"]) == {"simple_lofted", "y_fork"}
     assert {
         "flange_lip_width",
         "bead_seat_width",
@@ -165,6 +166,57 @@ def test_spoke_loft_sections_overlap_solids_and_form_a_crown() -> None:
         assert {point[0] for point in points} == {section["radius"]}
         assert points[3] == WheelTools._spoke_guide_points([section], -1)[0]
         assert points[2] == WheelTools._spoke_guide_points([section], 1)[0]
+
+
+def test_y_fork_wheel_validates_and_derives_branch_geometry() -> None:
+    values = WheelTools.validate({**VALID, "spoke_style": "y_fork"})
+
+    assert values["hub_radius"] < values["fork_radius"] < values["inner_radius"]
+    assert values["fork_spread"] > 0
+
+
+def test_y_fork_sections_have_trunk_and_two_offset_branches() -> None:
+    values = WheelTools.validate({**VALID, "spoke_style": "y_fork"})
+    trunk, branch_left, branch_right = WheelTools._y_fork_sections(values)
+
+    assert len(trunk) == 2
+    assert trunk[0]["lateral"] == 0.0
+    assert trunk[-1]["lateral"] == 0.0
+    assert trunk[-1]["radius"] == values["fork_radius"]
+
+    assert len(branch_left) == len(branch_right) == 2
+    for branch in (branch_left, branch_right):
+        assert branch[0]["radius"] == values["fork_radius"]
+        assert branch[-1]["radius"] == pytest.approx(
+            values["inner_radius"] + values["rim_thickness"] / 2
+        )
+    # Branches splay tangentially in opposite directions by the same amount.
+    assert branch_left[0]["lateral"] == -branch_right[0]["lateral"]
+    assert branch_left[-1]["lateral"] == -branch_right[-1]["lateral"]
+    assert branch_right[-1]["lateral"] == pytest.approx(values["fork_spread"])
+    # A branch's root cross-section stays nested inside the trunk's fork
+    # cross-section, so the two solids overlap in 3D and Part Design can
+    # implicitly fuse them.
+    trunk_fork_half_width = trunk[-1]["width"] / 2
+    for branch in (branch_left, branch_right):
+        outer_edge = abs(branch[0]["lateral"]) + branch[0]["width"] / 2
+        assert outer_edge <= trunk_fork_half_width
+
+
+def test_y_fork_rejects_fork_spread_too_large_for_spoke_count() -> None:
+    with pytest.raises(ValueError, match="fork_spread"):
+        WheelTools.validate({**VALID, "spoke_style": "y_fork", "fork_spread": 1000})
+
+
+def test_spoke_section_points_apply_lateral_offset() -> None:
+    section = {"radius": 100.0, "width": 10.0, "depth": 6.0, "crown": 2.0, "lateral": 4.0}
+    points = WheelTools._spoke_section_points(section)
+    guide_left = WheelTools._spoke_guide_points([section], -1)[0]
+    guide_right = WheelTools._spoke_guide_points([section], 1)[0]
+
+    assert {point[1] for point in points} == {-1.0, 9.0}
+    assert guide_left[1] == -1.0
+    assert guide_right[1] == 9.0
 
 
 def test_valve_hole_is_inside_flat_drop_center_and_clear_of_spoke() -> None:
