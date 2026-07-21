@@ -5,9 +5,22 @@
 [![Clones](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-clones.json)](traffic/clones.json)
 [![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-views.json)](traffic/views.json)
 
-The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop or Claude Code using natural language.
+The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop, Claude Code, Codex, or another MCP-capable assistant using natural language.
 
 ![Repository traffic](traffic/chart.png)
+
+## Codex and GPT-5.6 assisted development
+
+This fork is developed with OpenAI Codex and GPT-5.6 as hands-on engineering
+assistants. They were used to inspect the CATIA automation surface, design and
+implement MCP tools, write and extend tests, document deployment constraints,
+and iterate on live CATIA smoke checks.
+
+The AI work is treated as assisted engineering rather than blind generation:
+tool behavior is reviewed in code, covered by the repository tests where
+possible, and validated against real CATIA V5 sessions for COM-specific
+behavior such as drawings, GSD features, wheel geometry, screenshots, and HTTP
+transport deployment.
 
 **GSD extension in progress:** [`docs/PLAN.md`](docs/PLAN.md) is the implementation
 plan for the Generative Shape Design (surfacing) tools, and
@@ -42,7 +55,7 @@ This MCP server exposes **100+ tools** that let Claude:
 ## Quick Install (Recommended)
 
 ```bash
-git clone https://github.com/daiemon12/catia-v5-mcp-server.git
+git clone https://github.com/j-avdeev/catia-v5-mcp-server.git
 cd catia-v5-mcp-server
 bash setup.sh
 ```
@@ -54,7 +67,7 @@ The script handles everything: dependencies, Claude Desktop config, and verifica
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/daiemon12/catia-v5-mcp-server.git
+git clone https://github.com/j-avdeev/catia-v5-mcp-server.git
 cd catia-v5-mcp-server
 ```
 
