@@ -42,10 +42,8 @@ wireframe/surface GSD modules, so it has no bearing on items 1-16 above.
 Two of the files it touched did gain genuinely GSD-relevant tools alongside the
 contest-scoped growth, and those ARE in scope for this document — folded into the
 module inventory below: `catia_build_slinky_from_points` (`part_design_advanced.py`)
-and `catia_fill_drawing_bom` (`drawing.py`). Neither has a live-verification note
-anywhere (commit message only covers the saw blade's own unit tests) — treat both as
-**unverified against live CATIA** until proven otherwise, same status as the rest of
-Open Work item 1's todo list.
+and `catia_fill_drawing_bom` (`drawing.py`). The BOM tool was live-verified on
+2026-07-21; the slinky tool remains **unverified against live CATIA**.
 
 A remote-restart helper now exists and is **live-verified (2026-07-14)**:
 [`scripts/restart_remote_catia_mcp.ps1`](../scripts/restart_remote_catia_mcp.ps1)
@@ -652,8 +650,11 @@ extension this plan tracks.
     A ninth tool, `catia_fill_drawing_bom` (fills an existing drawing's BOM/specification
     table, matching rows by component name), was added later in the bundled `9be2035`
     commit described in the scope note at the top of this file. It's genuinely GSD/drawing
-    scope, unlike the rest of that commit, but has no live-verification record — treat it
-    as unverified.
+    scope, unlike the rest of that commit. It was live-verified on `.42` on 2026-07-21
+    with `python scripts/smoke_drawing_bom.py`: the smoke created a three-row
+    DrawingTable in a temporary A4 drawing, then found that same table and updated both
+    quantities without creating a second table. The temporary CATDrawing was closed
+    without saving.
 
     Method/behaviour drift found and fixed live (same class as the 3D gotchas):
     - **3D link is `GenerativeBehavior.Document = part_doc`, not `GenerativeLinks.AddLink`.**

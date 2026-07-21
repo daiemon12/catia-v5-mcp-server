@@ -292,6 +292,10 @@ automation and file I/O:
   `GenerativeBehavior.Document = part_doc` (not `GenerativeLinks.AddLink`), carry that
   link onto derived views or they render empty, and set scale/position explicitly (no
   API auto-layout).
+- **Drawing BOM** - `catia_fill_drawing_bom` was live-verified on 2026-07-21 with
+  `python scripts/smoke_drawing_bom.py`. It created a three-row DrawingTable in a
+  temporary A4 drawing and then found and updated that exact table; the smoke closed the
+  drawing without saving.
 - **GSD wheel path** — `catia_spline_3d`, `catia_loft`, `catia_fill`, `catia_join`,
   the PartBody-activated `CloseSurface` path, and the resulting circular pattern were
   exercised against live CATIA. A complete ten-spoke wheel was built and saved as
