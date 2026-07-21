@@ -658,7 +658,6 @@ extension this plan tracks.
     DrawingTable in a temporary A4 drawing, then found that same table and updated both
     quantities without creating a second table. The temporary CATDrawing was closed
     without saving.
-
     A tenth tool, `catia_drawing_add_text`, adds a named text annotation to a chosen
     drawing view at explicit view-relative millimetre coordinates. It was live-verified
     on `.42` on 2026-07-21 with `python scripts/smoke_drawing_text.py`: the smoke
