@@ -148,9 +148,8 @@ slinky spring from explicit guide points + a circular wire profile; **live-verif
 ### `knowledge.py` — parametric family
 `catia_create_parameter`, `catia_create_formula`, `catia_create_design_table`,
 `catia_copy_parameter_as_link`, `catia_list_relations`, `catia_upsert_formula` (the
-latter three added since; not individually live-verified — the module inventory always
-listed `catia_create_design_table` as implemented, so Open Work item 6 below means
-"unverified," not "not yet coded")
+design table was live-verified 2026-07-21; the latter three were added since and are
+not individually live-verified)
 
 ### `wheel.py` — composite orchestration tool
 `catia_design_wheel` — a single high-level tool taking `rim_diameter`, `rim_width`,
@@ -254,8 +253,10 @@ extension this plan tracks.
    instead of by index, before assuming it's solid. If it works, most of the original
    Stage-1 concern is already resolved by existing code, not new work.
 
-6. **Design table** (`knowledge.py`) is the one Stage-6 gap — formulas exist, a
-   spreadsheet-driven variant table doesn't yet.
+6. **Design table — DONE.** `catia_create_design_table` was live-verified on
+   2026-07-21 with `python scripts/smoke_design_table.py`: a temporary CATPart bound
+   `Wheel_Diameter` and `Spoke_Count` to an external table, and
+   `catia_list_relations` confirmed the resulting `DesignTable` relation.
 
 7. **Wheel spoke styles**: `catia_design_wheel`'s `spoke_style` enum currently only
    accepts `"simple_lofted"`. Expanding the family (turbine, mesh, multi-spoke twin)

@@ -220,7 +220,7 @@ class KnowledgeTools:
                 args["name"], "Created by CATIA MCP", args.get("copy_mode", True), args["file_path"]
             )
             for parameter_name in args["parameters"]:
-                table.AddAssociation(params.Item(parameter_name))
+                table.AddAssociation(params.Item(parameter_name), parameter_name)
             part.UpdateObject(table)
             return result(
                 name=table.Name, file_path=args["file_path"], parameters=args["parameters"]
