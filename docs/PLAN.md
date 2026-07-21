@@ -648,7 +648,7 @@ extension this plan tracks.
     full six-view sheet (front/top/right/iso + section + detail) plus a one-call
     `from_part` drawing were built, screenshotted (JPEG), and PDF-exported; the section
     view shows the real barrel/hub cross-section and the detail view a magnified region.
-    Scope excluded (deferred): dimensions, text annotations, DXF.
+    Scope excluded (deferred): dimensions and DXF.
 
     A ninth tool, `catia_fill_drawing_bom` (fills an existing drawing's BOM/specification
     table, matching rows by component name), was added later in the bundled `9be2035`
@@ -658,6 +658,12 @@ extension this plan tracks.
     DrawingTable in a temporary A4 drawing, then found that same table and updated both
     quantities without creating a second table. The temporary CATDrawing was closed
     without saving.
+
+    A tenth tool, `catia_drawing_add_text`, adds a named text annotation to a chosen
+    drawing view at explicit view-relative millimetre coordinates. It was live-verified
+    on `.42` on 2026-07-21 with `python scripts/smoke_drawing_text.py`: the smoke
+    created `SmokeNote` in `Background View` at `(35, 25)`, then confirmed it through
+    `catia_drawing_info`; the temporary CATDrawing was closed without saving.
 
     Method/behaviour drift found and fixed live (same class as the 3D gotchas):
     - **3D link is `GenerativeBehavior.Document = part_doc`, not `GenerativeLinks.AddLink`.**
@@ -675,7 +681,7 @@ extension this plan tracks.
       SAFEARRAY was accepted as a plain Python tuple (VARIANT fallback path unused so far).
       `DefineSectionView`/`DefineCircularDetailView` auto-name the views (e.g. `SecAA-A`,
       `DetBB`).
-    - Left for a later pass: dimensions/text/DXF; smarter auto-layout (offsets are fixed
+    - Left for a later pass: dimensions/DXF; smarter auto-layout (offsets are fixed
       `gap` mm, not part-size aware — no bounding box available, see item 11); hiding the
       section/detail callout dressing if undesired.
 

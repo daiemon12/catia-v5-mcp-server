@@ -162,6 +162,22 @@ class DrawingTools:
                 {},
             ),
             self._d(
+                "catia_drawing_add_text",
+                "Add a text annotation to a named view on the active drawing sheet. "
+                "Coordinates are in millimetres in that view's axis system.",
+                {
+                    "view": {"type": "string"},
+                    "text": {"type": "string", "minLength": 1},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "name": {
+                        "type": "string",
+                        "description": "Optional CATIA name for the created DrawingText.",
+                    },
+                },
+                ["view", "text", "x", "y"],
+            ),
+            self._d(
                 "catia_fill_drawing_bom",
                 "Fill an existing CATDrawing bill-of-materials/specification table. "
                 "Rows are matched by the first column's component name; the quantity "
@@ -255,6 +271,8 @@ class DrawingTools:
                 return self._update(arguments)
             case "catia_drawing_info":
                 return self._info(arguments)
+            case "catia_drawing_add_text":
+                return self._add_text(arguments)
             case "catia_fill_drawing_bom":
                 return self._fill_bom(arguments)
             case "catia_drawing_from_part":
@@ -597,6 +615,26 @@ class DrawingTools:
             document=self.conn.active_document.Name,
             sheets=sheets_out,
             tool="catia_drawing_info",
+        )
+
+    def _add_text(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        view = self._find_view(self._active_sheet(), args["view"])
+        text_value = str(args["text"])
+        text = view.Texts.Add(text_value, float(args["x"]), float(args["y"]))
+        self._try_rename(text, args.get("name"))
+        try:
+            self.conn.active_document.Update()
+        except Exception:
+            pass
+        self.conn.refresh_display()
+        return result(
+            view=view.Name,
+            name=getattr(text, "Name", None),
+            text=text_value,
+            x=_safe(lambda: text.x),
+            y=_safe(lambda: text.y),
+            tool="catia_drawing_add_text",
         )
 
     @staticmethod
