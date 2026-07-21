@@ -43,7 +43,9 @@ Two of the files it touched did gain genuinely GSD-relevant tools alongside the
 contest-scoped growth, and those ARE in scope for this document — folded into the
 module inventory below: `catia_build_slinky_from_points` (`part_design_advanced.py`)
 and `catia_fill_drawing_bom` (`drawing.py`). The BOM tool was live-verified on
-2026-07-21; the slinky tool remains **unverified against live CATIA**.
+2026-07-21; the slinky tool was live-verified the same day with
+`python scripts/smoke_slinky.py`: a 49-point, three-turn guide produced an explicit
+sweep and a closed solid, and the temporary CATPart was closed without saving.
 
 A remote-restart helper now exists and is **live-verified (2026-07-14)**:
 [`scripts/restart_remote_catia_mcp.ps1`](../scripts/restart_remote_catia_mcp.ps1)
@@ -140,8 +142,8 @@ and reference creation.
 `catia_close_surface`, `catia_thick_surface`, `catia_sew_surface`, `catia_split_solid`,
 `catia_face_fillet`, `catia_tritangent_fillet`, `catia_variable_fillet`,
 `catia_advanced_draft`, `catia_build_slinky_from_points` (added since — builds a solid
-slinky spring from explicit guide points + a circular wire profile; **unverified live**,
-see the scope note above)
+slinky spring from explicit guide points + a circular wire profile; **live-verified
+2026-07-21**, see the scope note above)
 
 ### `knowledge.py` — parametric family
 `catia_create_parameter`, `catia_create_formula`, `catia_create_design_table`,

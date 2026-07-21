@@ -149,6 +149,104 @@ class FakeDocument:
         return self.spa
 
 
+class FakeSlinkyFeature:
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+        self.Name = ""
+        self.closing = None
+        self.points = []
+
+    def SetClosing(self, closing: bool) -> None:
+        self.closing = closing
+
+    def AddPoint(self, point: object) -> None:
+        self.points.append(point)
+
+
+class FakeSlinkyHsf:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def AddNewSpline(self) -> FakeSlinkyFeature:
+        feature = FakeSlinkyFeature("spline")
+        self.calls.append(("spline", feature))
+        return feature
+
+    def AddNewPointCoord(self, x: float, y: float, z: float) -> FakeSlinkyFeature:
+        feature = FakeSlinkyFeature("point")
+        self.calls.append(("point", (x, y, z), feature))
+        return feature
+
+    def AddNewPlane3Points(self, *points: object) -> FakeSlinkyFeature:
+        feature = FakeSlinkyFeature("plane")
+        self.calls.append(("plane", points, feature))
+        return feature
+
+    def AddNewCircleCtrRad(
+        self, center: object, plane: object, geodesic: bool, radius: float
+    ) -> FakeSlinkyFeature:
+        feature = FakeSlinkyFeature("circle")
+        self.calls.append(("circle", (center, plane, geodesic, radius), feature))
+        return feature
+
+    def AddNewSweepExplicit(self, profile: object, guide: object) -> FakeSlinkyFeature:
+        feature = FakeSlinkyFeature("sweep")
+        self.calls.append(("sweep", (profile, guide), feature))
+        return feature
+
+
+class FakeSlinkyPart:
+    def __init__(self) -> None:
+        self.InWorkObject = None
+        self.updated = []
+
+    @staticmethod
+    def CreateReferenceFromObject(feature: object) -> tuple[str, object]:
+        return ("ref", feature)
+
+    def UpdateObject(self, feature: object) -> None:
+        self.updated.append(feature)
+
+
+class FakeSlinkyShapeFactory:
+    def __init__(self) -> None:
+        self.close_surface_reference = None
+        self.solid = FakeSlinkyFeature("solid")
+
+    def AddNewCloseSurface(self, reference: object) -> FakeSlinkyFeature:
+        self.close_surface_reference = reference
+        return self.solid
+
+
+class FakeSlinkyConnection:
+    def __init__(self) -> None:
+        self.shape_factory = FakeSlinkyShapeFactory()
+        self.body = object()
+        self.refreshed = False
+
+    def get_active_part_body(self) -> object:
+        return self.body
+
+    def refresh_display(self) -> None:
+        self.refreshed = True
+
+
+class FakeSlinkyGeometry:
+    def __init__(self) -> None:
+        self.part = FakeSlinkyPart()
+        self.hsf = FakeSlinkyHsf()
+        self.container = FakeGeoset()
+
+    def geoset(self, name: str, create: bool = False) -> FakeGeoset:
+        assert name == "Smoke_Slinky_Construction"
+        assert create is True
+        return self.container
+
+    @staticmethod
+    def resolve(spec: object) -> object:
+        return spec
+
+
 def make_tools() -> tuple[AdvancedPartDesignTools, FakeConnection, FakeGeometry]:
     connection = FakeConnection()
     tools = AdvancedPartDesignTools(connection)  # type: ignore[arg-type]
@@ -258,3 +356,57 @@ def test_advanced_draft_preserves_explicit_parting() -> None:
 def test_zero_draft_pull_direction_is_rejected() -> None:
     with pytest.raises(ValueError, match="non-zero"):
         AdvancedPartDesignTools._pull_vector({"x": 0, "y": 0, "z": 0})
+
+
+def test_build_slinky_creates_explicit_sweep_and_closed_surface() -> None:
+    connection = FakeSlinkyConnection()
+    tools = AdvancedPartDesignTools(connection)  # type: ignore[arg-type]
+    geometry = FakeSlinkyGeometry()
+    tools.geo = geometry  # type: ignore[assignment]
+
+    response = json.loads(
+        tools.execute(
+            "catia_build_slinky_from_points",
+            {
+                "points": [[20, 0, 0], [0, 20, 2], [-20, 0, 4], [0, -20, 6]],
+                "wire_radius": 2.0,
+                "geoset": "Smoke_Slinky_Construction",
+                "guide_name": "Smoke_Slinky_Guide",
+                "profile_name": "Smoke_Slinky_Profile",
+                "surface_name": "Smoke_Slinky_Surface",
+                "solid_name": "Smoke_Slinky_Solid",
+            },
+        )
+    )
+
+    guide = next(call[1] for call in geometry.hsf.calls if call[0] == "spline")
+    sweep = next(call[2] for call in geometry.hsf.calls if call[0] == "sweep")
+    assert guide.closing is False
+    assert len(guide.points) == 4
+    assert [call[0] for call in geometry.hsf.calls] == [
+        "spline",
+        "point",
+        "point",
+        "point",
+        "point",
+        "point",
+        "point",
+        "point",
+        "plane",
+        "circle",
+        "sweep",
+    ]
+    circle_call = next(call for call in geometry.hsf.calls if call[0] == "circle")
+    assert circle_call[1][2:] == (False, 2.0)
+    assert connection.shape_factory.close_surface_reference == ("ref", sweep)
+    assert connection.shape_factory.solid.Name == "Smoke_Slinky_Solid"
+    assert geometry.part.InWorkObject is connection.body
+    assert connection.refreshed is True
+    assert response == {
+        "feature": {"name": "Smoke_Slinky_Solid", "kind": "feature"},
+        "guide": {"name": "Smoke_Slinky_Guide", "kind": "feature"},
+        "surface": {"name": "Smoke_Slinky_Surface", "kind": "feature"},
+        "points": 4,
+        "wire_radius": 2.0,
+        "tool": "catia_build_slinky_from_points",
+    }
