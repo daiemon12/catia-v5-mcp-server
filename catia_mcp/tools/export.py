@@ -6,11 +6,11 @@ Also includes screenshot capture.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.paths import normalize_catia_path
 
 # CATIA export format identifiers
 FORMAT_MAP = {
@@ -56,9 +56,9 @@ class ExportTools:
                             "type": "string",
                             "description": (
                                 "Export format (optional if file extension is provided). "
-                                "One of: step, iges, stl, 3dxml, vrml"
+                                "One of: step, iges, stl, 3dxml, vrml, pdf (for drawings)"
                             ),
-                            "enum": ["step", "iges", "stl", "3dxml", "vrml"],
+                            "enum": ["step", "iges", "stl", "3dxml", "vrml", "pdf"],
                         },
                     },
                     "required": ["file_path"],
@@ -67,15 +67,17 @@ class ExportTools:
             {
                 "name": "catia_screenshot",
                 "description": (
-                    "Capture a screenshot of the current 3D view and save as image file. "
-                    "Supports PNG, JPG, BMP."
+                    "Capture a screenshot of the current 3D view and save as an image. "
+                    "Raster formats JPG/BMP/TIFF and vector EMF/CGM are chosen by the "
+                    "file extension. CATIA cannot emit PNG, so a .png path is written as "
+                    ".jpg instead (the returned path reflects this)."
                 ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "file_path": {
                             "type": "string",
-                            "description": "Output image path (e.g., 'C:/screenshots/part.png')",
+                            "description": "Output image path (e.g., 'C:/screenshots/part.jpg')",
                         },
                         "width": {
                             "type": "integer",
@@ -120,6 +122,29 @@ class ExportTools:
                     "properties": {},
                 },
             },
+            {
+                "name": "catia_zoom_view",
+                "description": (
+                    "Zoom the current 3D view in or out by a fixed number of CATIA viewer "
+                    "steps. Use after catia_set_view/catia_fit_all for repeatable close-up QA."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "direction": {
+                            "type": "string",
+                            "enum": ["in", "out"],
+                            "default": "in",
+                        },
+                        "steps": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 20,
+                            "default": 1,
+                        },
+                    },
+                },
+            },
         ]
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
@@ -136,6 +161,10 @@ class ExportTools:
                 return self._set_view(arguments["view"])
             case "catia_fit_all":
                 return self._fit_all()
+            case "catia_zoom_view":
+                return self._zoom_view(
+                    arguments.get("direction", "in"), arguments.get("steps", 1)
+                )
             case _:
                 raise ValueError(f"Unknown export tool: {tool_name}")
 
@@ -155,10 +184,9 @@ class ExportTools:
                 f"Unsupported export format: '{fmt}'. Supported: {supported}"
             )
 
-        # Ensure output directory exists
-        output_dir = os.path.dirname(file_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
+        # Normalize to a Windows path (CATIA rejects forward-slash paths with an
+        # "invalid file name" dialog) and ensure the output directory exists.
+        file_path = normalize_catia_path(file_path)
 
         # CATIA V5 export via SaveAs with format specification
         doc.ExportData(file_path, FORMAT_MAP[fmt_key])
@@ -175,23 +203,45 @@ class ExportTools:
 
         return f"Exported to {file_path}{size_info} (format: {fmt_key.upper()})"
 
+    # CATIA's CatCaptureFormat enum (V5). There is NO PNG format - the raster
+    # options are TIFF/BMP/JPEG; EMF/CGM are vector. CaptureToFile ignores the
+    # file extension and writes whatever this integer selects, so passing 1
+    # (EMF) wrote EMF content under a .png name regardless of the path.
+    _CAPTURE_FORMATS = {
+        ".cgm": 0,
+        ".emf": 1,
+        ".tif": 2,
+        ".tiff": 2,
+        ".bmp": 4,
+        ".jpg": 5,
+        ".jpeg": 5,
+    }
+
     def _screenshot(self, file_path: str, width: int = 1920, height: int = 1080) -> str:
         self.conn.ensure_connected()
 
-        # Ensure output directory exists
-        output_dir = os.path.dirname(file_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
+        # Normalize to a Windows path (forward slashes are rejected) and ensure
+        # the output directory exists.
+        file_path = normalize_catia_path(file_path)
 
-        # Capture via the active viewer
-        viewer = self.conn.active_editor.ActiveViewer
-        viewer.CaptureToFile(1, file_path)  # 1 = catCaptureFormatPNG or auto by extension
+        ext = os.path.splitext(file_path)[1].lower()
+        capture_format = self._CAPTURE_FORMATS.get(ext)
+        if capture_format is None:
+            # PNG (or any unsupported extension): CATIA cannot emit PNG, so write
+            # a JPEG and rename the path to match, keeping content and name in
+            # agreement instead of an EMF-under-.png mismatch.
+            capture_format = 5  # catCaptureFormatJPEG
+            file_path = os.path.splitext(file_path)[0] + ".jpg"
 
-        return f"Screenshot saved to {file_path} ({width}x{height})"
+        # Capture via the active viewer.
+        viewer = self.conn.active_viewer
+        viewer.CaptureToFile(capture_format, file_path)
+
+        return f"Screenshot saved to {file_path}"
 
     def _set_view(self, view: str) -> str:
         self.conn.ensure_connected()
-        viewer = self.conn.active_editor.ActiveViewer
+        viewer = self.conn.active_viewer
         viewpoint = viewer.Viewpoint3D
 
         # Standard view direction vectors and up vectors
@@ -223,6 +273,19 @@ class ExportTools:
 
     def _fit_all(self) -> str:
         self.conn.ensure_connected()
-        viewer = self.conn.active_editor.ActiveViewer
+        viewer = self.conn.active_viewer
         viewer.Reframe()
         return "View fitted to all geometry"
+
+    def _zoom_view(self, direction: str, steps: int) -> str:
+        if direction not in ("in", "out"):
+            raise ValueError("direction must be 'in' or 'out'")
+        if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 20:
+            raise ValueError("steps must be an integer between 1 and 20")
+
+        self.conn.ensure_connected()
+        viewer = self.conn.active_viewer
+        zoom = viewer.ZoomIn if direction == "in" else viewer.ZoomOut
+        for _ in range(steps):
+            zoom()
+        return f"View zoomed {direction} by {steps} step{'s' if steps != 1 else ''}"

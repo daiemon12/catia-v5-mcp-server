@@ -5,13 +5,32 @@
 [![Clones](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-clones.json)](traffic/clones.json)
 [![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-views.json)](traffic/views.json)
 
-The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop or Claude Code using natural language.
+The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop, Codex, or another MCP-capable assistant using natural language.
 
 ![Repository traffic](traffic/chart.png)
 
+## Codex and GPT-5.6 assisted development
+
+This fork is developed with OpenAI Codex and GPT-5.6 as hands-on engineering
+assistants. They were used to inspect the CATIA automation surface, design and
+implement MCP tools, write and extend tests, document deployment constraints,
+and iterate on live CATIA smoke checks.
+
+The AI work is treated as assisted engineering rather than blind generation:
+tool behavior is reviewed in code, covered by the repository tests where
+possible, and validated against real CATIA V5 sessions for COM-specific
+behavior such as drawings, GSD features, wheel geometry, screenshots, and HTTP
+transport deployment.
+
+**GSD extension in progress:** [`docs/PLAN.md`](docs/PLAN.md) is the implementation
+plan for the Generative Shape Design (surfacing) tools, and
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the live HTTP deployment against
+a real CATIA install, including why several simpler approaches don't work. Read both
+before extending or redeploying this server.
+
 ## What it does
 
-This MCP server exposes **50+ tools** that let Claude:
+This MCP server exposes **100+ tools** that let Claude:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -19,19 +38,24 @@ This MCP server exposes **50+ tools** that let Claude:
 - **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
+- **Generative Shape Design** — geometrical sets, stable references, 3D wireframe,
+  lofts, sweeps, blends, joins, trims, offsets, and surface-to-solid conversion
+- **Parametric wheels** — validated cast-style wheel blanks driven by named
+  dimensions and exported to CATPart/STEP for downstream engineering
 - **View control** — set standard views, fit all, capture screenshots
 
 ## Requirements
 
 - **Windows** (COM automation is Windows-only)
 - **CATIA V5** installed and licensed (R2016+)
+- **CATIA Part Design and Generative Shape Design licenses** for advanced and wheel tools
 - **Python 3.10+**
-- **Claude Desktop** or **Claude Code**
+- **Claude Desktop** or another MCP-capable client
 
 ## Quick Install (Recommended)
 
 ```bash
-git clone https://github.com/daiemon12/catia-v5-mcp-server.git
+git clone https://github.com/j-avdeev/catia-v5-mcp-server.git
 cd catia-v5-mcp-server
 bash setup.sh
 ```
@@ -43,7 +67,7 @@ The script handles everything: dependencies, Claude Desktop config, and verifica
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/daiemon12/catia-v5-mcp-server.git
+git clone https://github.com/j-avdeev/catia-v5-mcp-server.git
 cd catia-v5-mcp-server
 ```
 
@@ -55,8 +79,30 @@ pip install -e .
 
 Or manually:
 ```bash
-pip install mcp pywin32
+pip install mcp pywin32 pycatia
 ```
+
+**Windows: running this via a PowerShell script.** If you wrap the steps above in a
+`.ps1` script (for example an offline installer that copies the repo and a local wheel
+cache onto a machine with no internet access), running it directly may fail with:
+
+```
+File ...\install.ps1 cannot be loaded because running scripts is disabled on this system.
+```
+
+Don't change the system-wide execution policy to fix this. Instead bypass it for just
+that one run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Also run it from a **normal, non-elevated** PowerShell window — not "Run as
+Administrator". This isn't just a permissions nicety: as noted below, CATIA's COM
+object is only visible to processes in the same interactive logon session *and*
+integrity level. An elevated process, even under the same account in the same
+session, frequently can't see a non-elevated CATIA instance — the same failure mode
+as running the server from a scheduled task.
 
 ### 3. Configure Claude Desktop
 
@@ -90,7 +136,7 @@ Or with an absolute path:
 }
 ```
 
-### 4. For Claude Code
+### 4. Register from the Claude CLI
 
 ```bash
 claude mcp add catia-v5 python -- -m catia_mcp
@@ -101,6 +147,49 @@ claude mcp add catia-v5 python -- -m catia_mcp
 Make sure CATIA V5 is running before asking Claude to interact with it. The server will automatically connect to the running instance.
 
 If CATIA V5 is not running, the server will attempt to launch it (requires CATIA to be registered as COM server: `cnext.exe /regserver`).
+
+## Remote deployment (HTTP transport)
+
+By default the server talks to Claude over **stdio**, and Claude launches it as a
+child process — so the server must run on the same machine, in the same
+interactive desktop session, as CATIA. This is a hard requirement, not a
+convenience: CATIA's COM `GetActiveObject` only sees instances registered in
+the **same Windows logon session's Running Object Table**. A process launched
+elevated, via a scheduled task, or over SSH lands in a *different* session and
+cannot find an already-running CATIA, even under the same user account.
+
+If your MCP client runs on a different machine than CATIA (e.g. connecting over
+a VPN to a CAD workstation), use the **Streamable HTTP transport** instead. The
+server still runs inside CATIA's own interactive session — non-elevated, same
+user — but Claude reaches it over the network rather than spawning it directly:
+
+```powershell
+# On the CATIA machine, in a normal (non-elevated) session:
+set CATIA_MCP_TOKEN=<a long random token>
+python -m catia_mcp --http --host <this-machine-ip> --port 8000 --allowed-host <this-machine-ip>:8000
+```
+
+Then register it from the client as an HTTP MCP server:
+
+```bash
+claude mcp add --transport http catia-v5 http://<catia-machine-ip>:8000/mcp/ \
+  --header "Authorization: Bearer <the-same-token>"
+```
+
+**Security notes** — this endpoint executes CATIA automation and file I/O, so treat it
+like any other network service:
+- `--host` defaults to `127.0.0.1`; only bind it to the actual VPN/LAN interface,
+  never `0.0.0.0`, and never expose it to the open internet.
+- Always set `CATIA_MCP_TOKEN`. Without it the server logs a warning and accepts
+  unauthenticated requests.
+- `--allowed-host` populates the Streamable HTTP DNS-rebinding guard; set it to
+  the exact `host:port` clients will use in their `Host` header.
+- Firewall the port to the specific client IP(s) that need it
+  (`New-NetFirewallRule ... -RemoteAddress <client-ip>`), not the whole subnet.
+- If CATIA is on a network with no internet access, `mcp`/`pywin32`/`pycatia`
+  can be installed offline via `pip install --no-index --find-links <wheels-dir> ...`
+  after downloading the wheels on a connected machine
+  (`pip download ... --platform win_amd64 --python-version <ver> --only-binary=:all:`).
 
 ## Usage Examples
 
@@ -127,17 +216,25 @@ Once configured, just talk to Claude:
 catia-v5-mcp-server/
 ├── catia_mcp/
 │   ├── __init__.py
-│   ├── __main__.py          # python -m catia_mcp entry point
-│   ├── server.py            # MCP Server — tool registration & routing
-│   ├── connection.py        # COM connection manager (win32com)
+│   ├── __main__.py               # python -m catia_mcp entry point
+│   ├── server.py                 # MCP Server — tool registration, routing, stdio/HTTP transports
+│   ├── connection.py             # COM connection manager (win32com + pycatia)
 │   └── tools/
 │       ├── __init__.py
-│       ├── document.py      # Document management (9 tools)
-│       ├── sketcher.py      # 2D Sketch tools (11 tools)
-│       ├── part_design.py   # 3D Part Design features (15 tools)
-│       ├── assembly.py      # Assembly/Product tools (9 tools)
-│       ├── measurement.py   # Measurement & analysis (6 tools)
-│       └── export.py        # Export & view control (4 tools)
+│       ├── document.py           # Document management (9 tools)
+│       ├── sketcher.py           # 2D Sketch tools (11 tools)
+│       ├── part_design.py        # 3D Part Design features (15 tools)
+│       ├── part_design_advanced.py  # Surface-to-solid, advanced fillets
+│       ├── assembly.py           # Assembly/Product tools (9 tools)
+│       ├── measurement.py        # Measurement & analysis (6 tools)
+│       ├── export.py             # Export & view control (4 tools)
+│       ├── geoset.py             # Geometrical sets & stable reference resolution
+│       ├── wireframe.py          # 3D wireframe (points, lines, splines, helix)
+│       ├── surface.py            # GSD surfaces (loft, sweep, blend, fill, join)
+│       ├── knowledge.py          # Parameters & formulas
+│       ├── wheel.py              # Parametric wheel composite tool
+│       └── _geometry.py          # Shared geometry helpers
+├── tests/
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -145,25 +242,36 @@ catia-v5-mcp-server/
 
 ### How it works
 
+The server supports two transports; pick based on whether Claude and CATIA run
+on the same machine.
+
+**stdio** (default — same machine as CATIA):
 ```
-Claude (Desktop/Code)
-    │
-    │ stdio (MCP JSON-RPC)
-    ▼
-catia_mcp/server.py (MCP Server)
-    │
-    │ Tool routing
-    ▼
-catia_mcp/tools/*.py (Tool modules)
-    │
-    │ win32com.client (COM Automation)
-    ▼
-CATIA V5 Application
+Claude (Desktop/Code)  ──stdio (MCP JSON-RPC)──▶  catia_mcp/server.py
+                                                        │ tool routing
+                                                        ▼
+                                                catia_mcp/tools/*.py
+                                                        │ win32com / pycatia (COM)
+                                                        ▼
+                                                  CATIA V5 Application
 ```
 
-1. Claude sends MCP tool calls over stdio
+**Streamable HTTP** (`--http` — Claude on a different machine, server stays
+inside CATIA's interactive session; see [Remote deployment](#remote-deployment-http-transport)):
+```
+Claude (Desktop/Code)  ──HTTP + Bearer token, over LAN/VPN──▶  catia_mcp/server.py (uvicorn)
+                                                                     │ tool routing
+                                                                     ▼
+                                                             catia_mcp/tools/*.py
+                                                                     │ win32com / pycatia (COM,
+                                                                     │ same logon session as CATIA)
+                                                                     ▼
+                                                               CATIA V5 Application
+```
+
+1. Claude sends MCP tool calls over stdio or HTTP
 2. The server routes each call to the appropriate tool module
-3. Each tool module uses `win32com.client` to drive CATIA V5 via COM
+3. Each tool module uses `win32com.client` or `pycatia` to drive CATIA V5 via COM
 4. Results (JSON, text) are returned to Claude
 
 ## Tool Reference
@@ -241,10 +349,47 @@ CATIA V5 Application
 ### Export Tools (4)
 | Tool | Description |
 |------|-------------|
-| `catia_export` | Export to STEP/IGES/STL/3DXML/VRML |
-| `catia_screenshot` | Capture 3D view to image |
+| `catia_export` | Export to STEP/IGES/STL/3DXML/VRML/PDF |
+| `catia_screenshot` | Capture 3D view to image (JPEG/BMP/TIFF/EMF) |
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
+
+### Drawing Tools (8)
+2D drafting: generate associative drawing views from an open 3D part, then export to PDF.
+| Tool | Description |
+|------|-------------|
+| `catia_new_drawing` | Create a CATDrawing and set sheet paper size/orientation/scale |
+| `catia_drawing_base_view` | Generative view from a 3D part (front/back/top/bottom/left/right/iso) |
+| `catia_drawing_projection_view` | Projection view (right/left/top/bottom) off a parent view |
+| `catia_drawing_section_view` | Section view cut by a profile polyline |
+| `catia_drawing_detail_view` | Circular detail (blow-up) view |
+| `catia_drawing_update` | Regenerate all generative views |
+| `catia_drawing_info` | List sheets and views |
+| `catia_drawing_from_part` | One call: front+right+top+iso views + optional PDF |
+
+## Generative Shape Design and wheels
+
+The GSD extension adds geometrical-set and stable-reference tools, 3D wireframe
+construction, surface loft/sweep/blend/join operations, surface-to-solid
+features, advanced casting fillets/draft, and Knowledgeware parameters. Use
+`catia_design_wheel` for the validated `simple_lofted` wheel family.
+
+Geometry-producing tools return a reusable reference handle such as:
+
+```json
+{"name": "SpokeGuide.1", "kind": "feature"}
+```
+
+Face, edge, and vertex handles can additionally contain a persistent CATIA
+`brep_name`. Pass these handles directly to later GSD tools instead of relying
+on the current selection or an unstable topology index.
+
+The wheel tool produces a parametric, rebuildable wheel blank and CATPart/STEP
+outputs for downstream engineering. It does **not** provide Class-A styling,
+GD&T, DFM approval, FEA, fatigue/impact certification, or regulatory approval.
+Final valve drilling, back-cavity optimization, surface crowns, drafts, and
+fillet topology must be qualified in the target CATIA release before release to
+manufacturing.
 
 ## Troubleshooting
 
@@ -263,16 +408,21 @@ This server requires Windows. It will not work on macOS or Linux.
 Create or open a document first using `catia_new_part` or `catia_open_document`.
 
 ### COM ByRef array limitations
-Some measurement methods may not work with late binding. If you encounter issues, try using `pycatia` as an alternative backend (contribution welcome).
+Some measurement methods may not work with late binding. The GSD and advanced Part Design tools use `pycatia` (early-binding) internally for this reason; if a raw `win32com` call fails with a ByRef/array error, check whether a `pycatia`-backed equivalent exists first.
+
+### HTTP transport: "Unauthorized" or connection refused
+See [Remote deployment](#remote-deployment-http-transport) — check `CATIA_MCP_TOKEN` matches on both ends, that `--allowed-host` matches the `Host` header the client sends, and that the firewall rule permits the client's IP.
 
 ## Contributing
 
 This project is open-source. Contributions welcome:
 
-- **Wireframe & Surface (GSD)** tools
 - **Drawing** tools (2D drafting)
-- **Knowledgeware** (formulas, rules, check)
-- **pycatia backend** as alternative to raw win32com
+- **Knowledgeware** — design tables (formulas/parameters are implemented)
+- **Robust sub-element selection** — resolving faces/edges by geometric query
+  (normal direction, proximity) rather than name/index; the current GSD tools
+  resolve references by name, which is fragile for faces/edges that don't have
+  a stable name across rebuilds
 - **Tests** with COM mocking
 - **3DEXPERIENCE** CATIA support
 
@@ -287,3 +437,10 @@ Inspired by:
 - [freecad-mcp](https://github.com/contextform/freecad-mcp)
 - [abaqus-mcp-server](https://github.com/jianzhichun/abaqus-mcp-server)
 - [pycatia](https://github.com/evereux/pycatia)
+
+The Generative Shape Design tools (`geoset.py`, `wireframe.py`, `surface.py`,
+surface-to-solid features in `part_design_advanced.py`, and the formula
+helpers in `knowledge.py`) were adapted from
+[tongriyaotxt/catia-mcp](https://github.com/tongriyaotxt/catia-mcp), which
+declares an MIT license in `pyproject.toml`/README but does not ship a
+`LICENSE` file in the repository as of this writing.
