@@ -1,4 +1,4 @@
-"""Pure-Python tests for CATDrawing text annotation semantics."""
+"""Pure-Python tests for CATDrawing annotation semantics."""
 
 from __future__ import annotations
 
@@ -25,10 +25,39 @@ class FakeTexts:
         return text
 
 
+class FakeDimValue:
+    def __init__(self, value: float) -> None:
+        self.Value = value
+
+
+class FakeDimension:
+    def __init__(self, name: str, value: float) -> None:
+        self.Name = name
+        self.DimType = 0
+        self.DimStatus = 0
+        self._value = FakeDimValue(value)
+
+    def GetValue(self) -> FakeDimValue:
+        return self._value
+
+
+class FakeDimensions:
+    def __init__(self) -> None:
+        self.items: list[FakeDimension] = []
+
+    @property
+    def Count(self) -> int:
+        return len(self.items)
+
+    def Item(self, index: int) -> FakeDimension:
+        return self.items[index - 1]
+
+
 class FakeView:
     def __init__(self, name: str) -> None:
         self.Name = name
         self.Texts = FakeTexts()
+        self.Dimensions = FakeDimensions()
 
 
 class FakeViews:
@@ -43,7 +72,13 @@ class FakeViews:
 
 class FakeSheet:
     def __init__(self, view: FakeView) -> None:
+        self.Name = "Sheet.1"
         self.Views = FakeViews(view)
+
+    def GenerateDimensions(self) -> None:
+        self.Views.view.Dimensions.items.extend(
+            [FakeDimension("Dimension.1", 25.0), FakeDimension("Dimension.2", 50.0)]
+        )
 
 
 class FakeSheets:
@@ -112,3 +147,48 @@ def test_drawing_add_text_is_registered_with_required_fields() -> None:
     )
 
     assert definition["inputSchema"]["required"] == ["view", "text", "x", "y"]
+
+
+def test_drawing_generate_dimensions_reports_created_dimensions() -> None:
+    connection = FakeConnection()
+    tools = DrawingTools(connection)
+
+    output = tools.execute("catia_drawing_generate_dimensions", {})
+
+    assert json.loads(output) == {
+        "tool": "catia_drawing_generate_dimensions",
+        "sheet": "Sheet.1",
+        "before": {"Front": 0},
+        "after": {"Front": 2},
+        "generated_by_view": {"Front": 2},
+        "generated_total": 2,
+    }
+    assert connection.connected
+    assert connection.refreshed
+    assert connection.active_document.updated
+
+
+def test_drawing_generate_dimensions_is_registered_without_arguments() -> None:
+    definition = next(
+        item
+        for item in DrawingTools(FakeConnection()).get_tool_definitions()
+        if item["name"] == "catia_drawing_generate_dimensions"
+    )
+
+    assert definition["inputSchema"]["properties"] == {}
+    assert "required" not in definition["inputSchema"]
+
+
+def test_dimension_diagnostics_include_type_status_and_value() -> None:
+    view = FakeView("Front")
+    view.Dimensions.items.append(FakeDimension("Overall width", 50.0))
+
+    assert DrawingTools._dimension_diagnostics(view) == [
+        {
+            "index": 1,
+            "name": "Overall width",
+            "type": 0,
+            "status": 0,
+            "value": 50.0,
+        }
+    ]

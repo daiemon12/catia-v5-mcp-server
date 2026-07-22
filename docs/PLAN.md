@@ -648,7 +648,23 @@ extension this plan tracks.
     full six-view sheet (front/top/right/iso + section + detail) plus a one-call
     `from_part` drawing were built, screenshotted (JPEG), and PDF-exported; the section
     view shows the real barrel/hub cross-section and the detail view a magnified region.
-    Scope excluded (deferred): dimensions and DXF.
+    Scope excluded from the original eight-tool delivery: dimensions and DXF.
+
+    **Dimension follow-up implemented 2026-07-22; API smoke live-verified.**
+    `catia_drawing_generate_dimensions` now calls the native
+    `DrawingSheet.GenerateDimensions()` API and reports per-view counts before and
+    after generation. CATIA generates associative distance, length, angle, radius,
+    and diameter dimensions from eligible constraints in the linked 3D model.
+    `catia_drawing_info` now includes each view's dimension name, type, status, and
+    value. Pure-Python tests and Ruff pass. The initial live smoke on `.42` confirmed
+    publication, execution, diagnostics, and temporary-document cleanup but used an
+    empty A4 drawing, so `generated_total` was zero. A repeatable constrained-part
+    smoke was completed on 2026-07-22: it creates a temporary circle with a radius
+    constraint and a Pad, creates a generative A4 drawing, then generated two
+    associative dimensions (one each in Front and Right) before closing both documents
+    without saving. This also corrected `catia_sketch_constraint`: sketch constraints
+    now receive CATIA `Reference` objects and the real `CatConstraintType` enum values
+    (`Radius` is 14, not 1). DXF remains deferred.
 
     A ninth tool, `catia_fill_drawing_bom` (fills an existing drawing's BOM/specification
     table, matching rows by component name), was added later in the bundled `9be2035`
@@ -680,7 +696,7 @@ extension this plan tracks.
       SAFEARRAY was accepted as a plain Python tuple (VARIANT fallback path unused so far).
       `DefineSectionView`/`DefineCircularDetailView` auto-name the views (e.g. `SecAA-A`,
       `DetBB`).
-    - Left for a later pass: dimensions/DXF; smarter auto-layout (offsets are fixed
+    - Left for a later pass: live dimension verification and DXF; smarter auto-layout (offsets are fixed
       `gap` mm, not part-size aware — no bounding box available, see item 11); hiding the
       section/detail callout dressing if undesired.
 

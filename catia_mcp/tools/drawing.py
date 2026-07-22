@@ -157,8 +157,16 @@ class DrawingTools:
                 {},
             ),
             self._d(
+                "catia_drawing_generate_dimensions",
+                "Generate associative dimensions in every generative view on the active "
+                "sheet from eligible 3D constraints (distance, length, angle, radius, "
+                "and diameter).",
+                {},
+            ),
+            self._d(
                 "catia_drawing_info",
-                "List the active drawing's sheets and views (name, scale, position).",
+                "List the active drawing's sheets and views, including dimensions, "
+                "tables, and text annotations.",
                 {},
             ),
             self._d(
@@ -269,6 +277,8 @@ class DrawingTools:
                 return self._detail_view(arguments)
             case "catia_drawing_update":
                 return self._update(arguments)
+            case "catia_drawing_generate_dimensions":
+                return self._generate_dimensions(arguments)
             case "catia_drawing_info":
                 return self._info(arguments)
             case "catia_drawing_add_text":
@@ -598,6 +608,7 @@ class DrawingTools:
                         "scale": _safe(lambda v=view: v.Scale),
                         "x": _safe(lambda v=view: v.x),
                         "y": _safe(lambda v=view: v.y),
+                        "dimensions": self._dimension_diagnostics(view),
                         "tables": self._table_diagnostics(view),
                         "texts": self._text_diagnostics(view),
                     }
@@ -615,6 +626,69 @@ class DrawingTools:
             document=self.conn.active_document.Name,
             sheets=sheets_out,
             tool="catia_drawing_info",
+        )
+
+    @staticmethod
+    def _dimension_diagnostics(view: Any) -> list[dict[str, Any]]:
+        dimensions = _safe(lambda: view.Dimensions)
+        if dimensions is None:
+            return []
+        out: list[dict[str, Any]] = []
+        for index in range(1, dimensions.Count + 1):
+            dimension = dimensions.Item(index)
+            dim_value = _safe(lambda d=dimension: d.GetValue())
+            out.append(
+                {
+                    "index": index,
+                    "name": getattr(dimension, "Name", f"Dimension.{index}"),
+                    "type": _safe(lambda d=dimension: d.DimType),
+                    "status": _safe(lambda d=dimension: d.DimStatus),
+                    "value": _safe(lambda value=dim_value: value.Value),
+                }
+            )
+        return out
+
+    def _dimension_counts(self, sheet: Any) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        views = sheet.Views
+        for index in range(1, views.Count + 1):
+            view = views.Item(index)
+            dimensions = _safe(lambda v=view: v.Dimensions)
+            counts[getattr(view, "Name", f"View.{index}")] = int(
+                _safe(lambda collection=dimensions: collection.Count) or 0
+            )
+        return counts
+
+    def _generate_dimensions(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        sheet = self._active_sheet()
+        before = self._dimension_counts(sheet)
+        try:
+            sheet.GenerateDimensions()
+        except Exception as exc:
+            raise RuntimeError(
+                "CATIA could not generate drawing dimensions. The active sheet must "
+                "contain generative views linked to a 3D model whose eligible constraints "
+                "are configured for dimension generation."
+            ) from exc
+        try:
+            self.conn.active_document.Update()
+        except Exception:
+            pass
+        after = self._dimension_counts(sheet)
+        generated_by_view = {
+            name: after_count - before.get(name, 0)
+            for name, after_count in after.items()
+            if after_count > before.get(name, 0)
+        }
+        self.conn.refresh_display()
+        return result(
+            sheet=getattr(sheet, "Name", None),
+            before=before,
+            after=after,
+            generated_by_view=generated_by_view,
+            generated_total=sum(generated_by_view.values()),
+            tool="catia_drawing_generate_dimensions",
         )
 
     def _add_text(self, args: dict[str, Any]) -> str:
