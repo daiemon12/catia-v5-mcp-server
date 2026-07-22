@@ -19,7 +19,7 @@ the conversation that produced it.
 - **The MCP server runs inside that same interactive session**, non-elevated, as a
   foreground `python -m catia_mcp --http ...` process. It listens on
   `192.168.5.42:8000`.
-- **The client (Claude Code, or any MCP HTTP client) connects over the VPN** to that
+- **The MCP HTTP client connects over the VPN** to that
   address with a bearer token.
 - Server source lives on the box at `C:\Users\sup02\catia-v5-mcp-server\catia_mcp`
   (pushed via SMB admin share, not git — the box has **no internet access**, see
@@ -66,10 +66,10 @@ understanding why they failed:
    scaffolding from this attempt — inert unless `CATIA_HOST` is set, harmless to keep
    or remove.)
 
-3. **stdio launched directly by Claude Code, server and client on the same
+3. **stdio launched directly by the MCP client, server and client on the same
    machine.** This is the *normal*, simplest way MCP servers run — and would have
-   worked, if Claude Code and CATIA were on the same machine. They're not: CATIA is on
-   a VPN-reachable Windows workstation, Claude Code runs elsewhere. Hence HTTP.
+   worked, if the client and CATIA were on the same machine. They're not: CATIA is on
+   a VPN-reachable Windows workstation, while the client runs elsewhere. Hence HTTP.
 
 **HTTP over the VPN sidesteps all of this**: the server process itself runs inside
 CATIA's own interactive, non-elevated session (satisfying the ROT constraint), and the

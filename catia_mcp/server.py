@@ -1,7 +1,7 @@
 """CATIA V5 MCP Server.
 
 Main entry point. Exposes all CATIA V5 automation tools via the
-Model Context Protocol (MCP) for use with Claude Desktop or Claude Code.
+Model Context Protocol (MCP) for use with Claude Desktop or another MCP client.
 
 Usage:
     python -m catia_mcp.server

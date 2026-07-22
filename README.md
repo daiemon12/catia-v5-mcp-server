@@ -5,7 +5,7 @@
 [![Clones](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-clones.json)](traffic/clones.json)
 [![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-views.json)](traffic/views.json)
 
-The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop, Claude Code, Codex, or another MCP-capable assistant using natural language.
+The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop, Codex, or another MCP-capable assistant using natural language.
 
 ![Repository traffic](traffic/chart.png)
 
@@ -50,7 +50,7 @@ This MCP server exposes **100+ tools** that let Claude:
 - **CATIA V5** installed and licensed (R2016+)
 - **CATIA Part Design and Generative Shape Design licenses** for advanced and wheel tools
 - **Python 3.10+**
-- **Claude Desktop** or **Claude Code**
+- **Claude Desktop** or another MCP-capable client
 
 ## Quick Install (Recommended)
 
@@ -136,7 +136,7 @@ Or with an absolute path:
 }
 ```
 
-### 4. For Claude Code
+### 4. Register from the Claude CLI
 
 ```bash
 claude mcp add catia-v5 python -- -m catia_mcp
@@ -158,8 +158,8 @@ the **same Windows logon session's Running Object Table**. A process launched
 elevated, via a scheduled task, or over SSH lands in a *different* session and
 cannot find an already-running CATIA, even under the same user account.
 
-If Claude Code runs on a different machine than CATIA (e.g. connecting over a
-VPN to a CAD workstation), use the **Streamable HTTP transport** instead. The
+If your MCP client runs on a different machine than CATIA (e.g. connecting over
+a VPN to a CAD workstation), use the **Streamable HTTP transport** instead. The
 server still runs inside CATIA's own interactive session — non-elevated, same
 user — but Claude reaches it over the network rather than spawning it directly:
 
