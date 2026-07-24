@@ -33,7 +33,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     handlers=[
-        logging.FileHandler("catia_mcp.log", encoding="utf-8"),
+        logging.FileHandler(r"C:\Users\amirhossein\catia_mcp.log", encoding="utf-8"),
         logging.StreamHandler(sys.stderr),
     ],
 )
