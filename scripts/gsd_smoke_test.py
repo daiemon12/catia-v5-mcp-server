@@ -84,6 +84,17 @@ def main() -> int:
     # ── Surfaces ──
     loft_ok = step("multi_section_surface", lambda: run("catia_gsd_multi_section_surface", {
         "sections": ["C0", "C1", "C2"], "name": "Loft1"}))
+    # Open (line) sections drawn in opposing directions: the middle one must be
+    # flipped via orientations or CATIA rejects the loft (regression for a
+    # pitfall found in real usage).
+    step("multi_section_surface (orientations)", lambda: (
+        run("catia_gsd_line", {"point1": [0, 100, 0], "point2": [20, 100, 0], "name": "MSA"}),
+        run("catia_gsd_line", {"point1": [20, 130, 25], "point2": [0, 130, 25], "name": "MSB"}),
+        run("catia_gsd_line", {"point1": [0, 160, 0], "point2": [20, 160, 0], "name": "MSC"}),
+        run("catia_gsd_multi_section_surface", {
+            "sections": ["MSA", "MSB", "MSC"], "orientations": [1, -1, 1],
+            "name": "Loft_Lines"}),
+    )[-1])
     step("sweep", lambda: run("catia_gsd_sweep", {
         "profile": "LN1", "guide": "SP1", "name": "Sweep1"}))
     step("extrude", lambda: run("catia_gsd_extrude", {
@@ -154,6 +165,7 @@ def main() -> int:
         part_path = os.path.join(OUTPUT_DIR, f"GSD_SmokeTest_{n}.CATPart")
         n += 1
     step("save part", lambda: conn.active_document.SaveAs(part_path) or part_path)
+    step("close test document", lambda: conn.active_document.Close())
 
     # ── Summary ──
     failed = [r for r in results if r[0] == "FAIL"]

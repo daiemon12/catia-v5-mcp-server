@@ -267,7 +267,19 @@ class GSDTools:
                         "guides": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Optional guide curve element names",
+                            "description": (
+                                "Optional guide curve element names. Each guide MUST "
+                                "geometrically intersect every section, or the surface fails."
+                            ),
+                        },
+                        "orientations": {
+                            "type": "array",
+                            "items": {"type": "integer", "enum": [1, -1]},
+                            "description": (
+                                "Optional per-section orientation, same length/order as "
+                                "sections. Set -1 for a section whose curve direction opposes "
+                                "the others (otherwise the loft twists or fails). Default: all 1."
+                            ),
                         },
                         "name": {"type": "string", "description": "Optional name for the surface"},
                     },
@@ -666,6 +678,25 @@ class GSDTools:
             return part.CreateReferenceFromObject(point)
         raise ValueError(f"Invalid point spec: {spec!r}. Use an element name or [x, y, z].")
 
+    def _safe_update(self, feature: Any) -> None:
+        """Update a feature; if CATIA rejects it, delete the broken feature so
+        failed attempts don't linger in the tree, then re-raise."""
+        part = self.conn.get_active_part()
+        try:
+            part.UpdateObject(feature)
+        except Exception as e:
+            try:
+                selection = self.conn.active_document.Selection
+                selection.Clear()
+                selection.Add(feature)
+                selection.Delete()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"CATIA rejected the feature (update failed) and it was removed "
+                f"from the tree: {e}"
+            ) from e
+
     def _finish(self, shape: Any, name: str | None, message: str) -> str:
         """Append a hybrid shape to the active geoset, rename, update, refresh."""
         part = self.conn.get_active_part()
@@ -674,7 +705,7 @@ class GSDTools:
         if name:
             shape.Name = name
         part.InWorkObject = shape
-        part.UpdateObject(shape)
+        self._safe_update(shape)
         self.conn.refresh_display()
         return f"{message} Element: '{shape.Name}' in geometrical set '{geoset.Name}'"
 
@@ -850,23 +881,36 @@ class GSDTools:
         self.conn.ensure_connected()
         sections = args["sections"]
         guides = args.get("guides", [])
+        orientations = args.get("orientations") or [1] * len(sections)
+        if len(orientations) != len(sections):
+            raise ValueError(
+                f"'orientations' has {len(orientations)} entries but there are "
+                f"{len(sections)} sections — lengths must match."
+            )
 
         loft = self._factory().AddNewLoft()
-        for section_name in sections:
+        for section_name, orientation in zip(sections, orientations):
             ref = self._ref(section_name)
             # (section, orientation, closing point). Nothing/None = automatic.
             try:
-                loft.AddSectionToLoft(ref, 1, None)
+                loft.AddSectionToLoft(ref, orientation, None)
             except Exception:
-                loft.AddSectionToLoft(ref, 1)
+                loft.AddSectionToLoft(ref, orientation)
         for guide_name in guides:
             loft.AddGuide(self._ref(guide_name))
 
         guides_msg = f" with {len(guides)} guide(s)" if guides else ""
-        return self._finish(
-            loft, args.get("name"),
-            f"Multi-sections surface created through {len(sections)} sections{guides_msg}.",
-        )
+        try:
+            return self._finish(
+                loft, args.get("name"),
+                f"Multi-sections surface created through {len(sections)} sections{guides_msg}.",
+            )
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"{e} Common causes: a guide that does not intersect every section "
+                f"(check with measurements), or a section whose curve direction "
+                f"opposes the others (flip it with orientations=-1)."
+            ) from e
 
     def _sweep(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -1002,7 +1046,7 @@ class GSDTools:
         part.InWorkObject = body
         # AddNewThickSurface(surface, isymmetric, top offset, bottom offset)
         thick = part.ShapeFactory.AddNewThickSurface(surface_ref, 0, thickness1, thickness2)
-        part.UpdateObject(thick)
+        self._safe_update(thick)
         self.conn.refresh_display()
         return (
             f"ThickSurface solid created from '{args['surface']}' "
@@ -1017,6 +1061,6 @@ class GSDTools:
         surface_ref = self._ref(args["surface"])
         part.InWorkObject = body
         close = part.ShapeFactory.AddNewCloseSurface(surface_ref)
-        part.UpdateObject(close)
+        self._safe_update(close)
         self.conn.refresh_display()
         return f"CloseSurface solid created from '{args['surface']}'. Feature: '{close.Name}'"
