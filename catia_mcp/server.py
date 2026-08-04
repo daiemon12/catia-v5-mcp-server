@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from typing import Any
 
@@ -33,7 +34,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     handlers=[
-        logging.FileHandler("catia_mcp.log", encoding="utf-8"),
+        logging.FileHandler(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "catia_mcp.log"),
+            encoding="utf-8",
+        ),
         logging.StreamHandler(sys.stderr),
     ],
 )
