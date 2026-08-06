@@ -1,0 +1,3 @@
+Wheel_Diameter	Spoke_Count
+400mm	5
+450mm	6
