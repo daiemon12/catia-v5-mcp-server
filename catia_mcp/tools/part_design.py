@@ -357,6 +357,22 @@ class PartDesignTools:
                     "required": ["offset"],
                 },
             },
+{
+                "name": "catia_delete_feature",
+                "description": (
+                    "Delete a feature (Pad, Pocket, Fillet, etc.) from the active Part. "
+                    "If no feature_name is given, deletes the last created feature."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "feature_name": {
+                            "type": "string",
+                            "description": "Name of the feature to delete (e.g. 'Pad.1'). Defaults to the last feature.",
+                        },
+                    },
+                },
+            },
             {
                 "name": "catia_list_features",
                 "description": "List all features in the active Part Body with their names and types.",
@@ -403,6 +419,8 @@ class PartDesignTools:
                 return self._draft(arguments)
             case "catia_thickness":
                 return self._thickness(arguments)
+            case "catia_delete_feature":
+                return self._delete_feature(arguments)
             case "catia_list_features":
                 return self._list_features()
             case "catia_list_edges":
@@ -440,7 +458,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         height = args["height"]
@@ -464,7 +482,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         depth = args["depth"]
@@ -482,7 +500,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         angle = args.get("angle", 360)
@@ -498,7 +516,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         angle = args.get("angle", 360)
@@ -514,7 +532,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         radius = args["radius"]
 
@@ -532,7 +550,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         length = args["length"]
         angle = args.get("angle", 45)
@@ -553,7 +571,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         diameter = args["diameter"]
@@ -574,7 +592,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         feature = self._get_last_shape(args.get("feature_name"))
         d1_count = args["dir1_count"]
@@ -601,7 +619,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         feature = self._get_last_shape(args.get("feature_name"))
         count = args["count"]
@@ -628,7 +646,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         plane_key = args["plane"].lower()
         planes = self.conn.get_origin_elements()
@@ -649,7 +667,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         thickness = args["thickness"]
         shell = sf.AddNewShell(self._get_last_shape(), 0, thickness, thickness)
@@ -672,7 +690,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         angle = args["angle"]
 
@@ -693,7 +711,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         offset = args["offset"]
         thickness = sf.AddNewThickness(self._get_last_shape(), 0, offset)
@@ -702,6 +720,19 @@ class PartDesignTools:
         self.conn.refresh_display()
         return f"Thickness added: {offset} mm offset. Feature: '{thickness.Name}'"
 
+    def _delete_feature(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+
+        feature_name = args.get("feature_name")
+        feature = self._get_last_shape(feature_name)
+        deleted_name = feature.Name
+
+        part.RemoveObject(feature)
+        part.Update()
+        self.conn.refresh_display()
+
+        return f"Feature '{deleted_name}' deleted successfully."
     def _list_features(self) -> str:
         self.conn.ensure_connected()
         body = self.conn.get_active_part_body()
