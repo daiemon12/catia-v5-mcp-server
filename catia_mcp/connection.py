@@ -131,10 +131,10 @@ class CATIAConnection:
             raise RuntimeError("No active document in CATIA. Create or open a document first.")
 
     @property
-    def active_editor(self) -> Any:
-        """Get the active editor."""
+    def active_window(self) -> Any:
+        """Get the active window (CATIA V5 has no ActiveEditor)."""
         self.ensure_connected()
-        return self.app.ActiveEditor
+        return self.app.ActiveWindow
 
     @property
     def hso(self) -> Any:
@@ -145,7 +145,7 @@ class CATIAConnection:
     def refresh_display(self) -> None:
         """Refresh the CATIA 3D view."""
         try:
-            self.active_editor.ActiveViewer.Reframe()
+            self.active_window.ActiveViewer.Reframe()
         except Exception:
             pass
 

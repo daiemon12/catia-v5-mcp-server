@@ -68,7 +68,8 @@ class ExportTools:
                 "name": "catia_screenshot",
                 "description": (
                     "Capture a screenshot of the current 3D view and save as image file. "
-                    "Supports PNG, JPG, BMP."
+                    "Supports JPG, BMP, TIFF (CATIA V5 cannot capture PNG; a .png path "
+                    "is saved as .jpg instead)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -183,15 +184,22 @@ class ExportTools:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
 
-        # Capture via the active viewer
-        viewer = self.conn.active_editor.ActiveViewer
-        viewer.CaptureToFile(1, file_path)  # 1 = catCaptureFormatPNG or auto by extension
+        # CatCaptureFormat: 2 = TIFF, 4 = BMP, 5 = JPEG (no PNG in CATIA V5)
+        capture_formats = {".jpg": 5, ".jpeg": 5, ".bmp": 4, ".tif": 2, ".tiff": 2}
+        ext = os.path.splitext(file_path)[1].lower()
+        capture_format = capture_formats.get(ext)
+        if capture_format is None:
+            file_path = os.path.splitext(file_path)[0] + ".jpg"
+            capture_format = 5
+
+        viewer = self.conn.active_window.ActiveViewer
+        viewer.CaptureToFile(capture_format, file_path)
 
         return f"Screenshot saved to {file_path} ({width}x{height})"
 
     def _set_view(self, view: str) -> str:
         self.conn.ensure_connected()
-        viewer = self.conn.active_editor.ActiveViewer
+        viewer = self.conn.active_window.ActiveViewer
         viewpoint = viewer.Viewpoint3D
 
         # Standard view direction vectors and up vectors
@@ -223,6 +231,6 @@ class ExportTools:
 
     def _fit_all(self) -> str:
         self.conn.ensure_connected()
-        viewer = self.conn.active_editor.ActiveViewer
+        viewer = self.conn.active_window.ActiveViewer
         viewer.Reframe()
         return "View fitted to all geometry"

@@ -11,11 +11,12 @@ The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from 
 
 ## What it does
 
-This MCP server exposes **50+ tools** that let Claude:
+This MCP server exposes **75+ tools** that let Claude:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
 - **Part Design** — Pad, Pocket, Shaft, Groove, Fillet, Chamfer, Hole, Shell, Draft, Thickness, Patterns (rectangular/circular), Mirror
+- **Generative Shape Design (GSD)** — 3D wireframe (points, lines, planes, splines, circles), Multi-sections Surface (loft), Sweep, Extrude, Revolve, Fill, Blend, Offset, Join, Split, Trim, Symmetry, ThickSurface/CloseSurface to solids
 - **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
@@ -135,6 +136,7 @@ catia-v5-mcp-server/
 │       ├── document.py      # Document management (9 tools)
 │       ├── sketcher.py      # 2D Sketch tools (11 tools)
 │       ├── part_design.py   # 3D Part Design features (15 tools)
+│       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
 │       └── export.py        # Export & view control (4 tools)
@@ -214,6 +216,34 @@ CATIA V5 Application
 | `catia_thickness` | Thickness offset |
 | `catia_list_features` | List features in body |
 | `catia_list_edges` | List edges for fillet/chamfer |
+
+### Generative Shape Design Tools (24)
+| Tool | Description |
+|------|-------------|
+| `catia_gsd_create_geoset` | Create a Geometrical Set and make it active |
+| `catia_gsd_set_active_geoset` | Select the target Geometrical Set |
+| `catia_gsd_list_elements` | List geosets, wireframe/surface elements, sketches |
+| `catia_gsd_point` | 3D point at (x, y, z) |
+| `catia_gsd_line` | 3D line between two points |
+| `catia_gsd_plane_offset` | Plane offset from a reference plane |
+| `catia_gsd_plane_3points` | Plane through three points |
+| `catia_gsd_spline` | 3D spline through points |
+| `catia_gsd_circle` | 3D circle on a support plane |
+| `catia_gsd_project` | Project a curve/point onto a support |
+| `catia_gsd_intersection` | Intersection of two elements |
+| `catia_gsd_multi_section_surface` | Multi-sections Surface (loft) through sections + guides |
+| `catia_gsd_sweep` | Swept surface (profile along guide) |
+| `catia_gsd_extrude` | Extruded surface along a direction |
+| `catia_gsd_revolve` | Surface of revolution around an axis |
+| `catia_gsd_fill` | Fill surface from boundary curves |
+| `catia_gsd_blend` | Blend surface between two curves |
+| `catia_gsd_offset_surface` | Offset surface |
+| `catia_gsd_join` | Join curves/surfaces into one element |
+| `catia_gsd_split` | Split an element by a cutter |
+| `catia_gsd_trim` | Mutual trim of two elements |
+| `catia_gsd_symmetry` | Mirror an element about a plane |
+| `catia_gsd_thick_surface` | Surface → solid by thickness (Part Design) |
+| `catia_gsd_close_surface` | Closed surface → solid (Part Design) |
 
 ### Assembly Tools (9)
 | Tool | Description |
