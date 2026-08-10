@@ -159,21 +159,35 @@ class DocumentTools:
         self.conn.ensure_connected()
         docs = self.conn.documents
         doc = docs.Add("Part")
+        rename_note = ""
         if name:
-            doc.Part.Name = name
+            try:
+                doc.Part.Name = name
+            except Exception as e:
+                rename_note = f" (rename to '{name}' not supported by this CATIA version: {e})"
         part_name = doc.Part.Name
         self.conn.refresh_display()
-        return f"Created new Part document: '{part_name}'"
+        return f"Created new Part document: '{part_name}'{rename_note}"
 
     def _new_product(self, name: str | None = None) -> str:
         self.conn.ensure_connected()
         docs = self.conn.documents
         doc = docs.Add("Product")
+        rename_note = ""
         if name:
-            doc.Product.Name = name
+            try:
+                doc.Product.Name = name
+            except Exception as e:
+                rename_note = f" (rename to '{name}' not supported by this CATIA version: {e})"
+            else:
+                if doc.Product.Name != name:
+                    rename_note = (
+                        f" (requested name '{name}' was not applied by CATIA; "
+                        f"kept '{doc.Product.Name}')"
+                    )
         product_name = doc.Product.Name
         self.conn.refresh_display()
-        return f"Created new Product (assembly) document: '{product_name}'"
+        return f"Created new Product (assembly) document: '{product_name}'{rename_note}"
 
     def _open_document(self, file_path: str) -> str:
         self.conn.ensure_connected()
