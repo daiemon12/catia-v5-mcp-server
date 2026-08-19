@@ -8,3 +8,12 @@ build/
 .venv/
 venv/
 .env
+.tmp-live-shots/
+
+# Credentials — never commit
+*-creds
+*.creds
+.catia-mcp-env
+
+# Local Claude Code config (machine-specific)
+.claude/

@@ -64,7 +64,8 @@ class SketcherTools:
                 "name": "catia_sketch_line",
                 "description": (
                     "Draw a line in the active sketch from (x1, y1) to (x2, y2). "
-                    "Coordinates in mm."
+                    "Coordinates in mm. The line can be construction geometry or "
+                    "the centerline used by shaft/groove features."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -73,6 +74,16 @@ class SketcherTools:
                         "y1": {"type": "number", "description": "Start Y coordinate (mm)"},
                         "x2": {"type": "number", "description": "End X coordinate (mm)"},
                         "y2": {"type": "number", "description": "End Y coordinate (mm)"},
+                        "construction": {
+                            "type": "boolean",
+                            "description": "Create construction geometry.",
+                            "default": False,
+                        },
+                        "centerline": {
+                            "type": "boolean",
+                            "description": "Set this line as the shaft/groove centerline.",
+                            "default": False,
+                        },
                     },
                     "required": ["x1", "y1", "x2", "y2"],
                 },
@@ -238,6 +249,8 @@ class SketcherTools:
                 return self._draw_line(
                     arguments["x1"], arguments["y1"],
                     arguments["x2"], arguments["y2"],
+                    arguments.get("construction", False),
+                    arguments.get("centerline", False),
                 )
             case "catia_sketch_rectangle":
                 return self._draw_rectangle(
@@ -301,6 +314,14 @@ class SketcherTools:
         self._active_sketch = sketch
         self._active_factory = sketch.OpenEdition()
 
+        # Record the name so Part Design features (pad/pocket/hole/shaft) can
+        # target this exact sketch instead of guessing via Sketches.Item(Count),
+        # which mis-resolves once sketches get absorbed into features.
+        try:
+            self.conn.active_sketch_name = sketch.Name
+        except Exception:
+            self.conn.active_sketch_name = None
+
         plane_names = {"xy": "XY (front)", "yz": "YZ (right)", "zx": "ZX (top)"}
         return f"Sketch created on {plane_names.get(plane_key, plane)} plane. Ready for geometry."
 
@@ -314,11 +335,24 @@ class SketcherTools:
         self.conn.refresh_display()
         return "Sketch closed. You can now apply Part Design features (pad, pocket, etc.)."
 
-    def _draw_line(self, x1: float, y1: float, x2: float, y2: float) -> str:
+    def _draw_line(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        construction: bool = False,
+        centerline: bool = False,
+    ) -> str:
         self._ensure_sketch_open()
         factory = self._active_factory
         line = factory.CreateLine(x1, y1, x2, y2)
-        return f"Line created from ({x1}, {y1}) to ({x2}, {y2}) mm"
+        if construction or centerline:
+            line.Construction = True
+        if centerline:
+            self._active_sketch.CenterLine = line
+        kind = " centerline" if centerline else " construction" if construction else ""
+        return f"Line created{kind} from ({x1}, {y1}) to ({x2}, {y2}) mm"
 
     def _draw_rectangle(self, x1: float, y1: float, x2: float, y2: float) -> str:
         self._ensure_sketch_open()
@@ -375,7 +409,7 @@ class SketcherTools:
             ctrl_pt = factory.CreatePoint(pt[0], pt[1])
             spline_pts.append(ctrl_pt)
 
-        spline = factory.CreateSpline(spline_pts)
+        factory.CreateSpline(spline_pts)
 
         if closed and len(points) >= 3:
             # Close the spline by adding a line from last to first point
@@ -402,6 +436,7 @@ class SketcherTools:
 
         constraints = sketch.Constraints
         geom = sketch.GeometricElements
+        part = self.conn.get_active_part()
 
         # Dimensional constraints (need a geometry reference + value)
         if constraint_type in ("distance", "radius", "angle"):
@@ -410,36 +445,36 @@ class SketcherTools:
             if idx1 is None:
                 raise ValueError(f"Constraint type '{constraint_type}' requires 'geometry_index_1'.")
 
-            ref1 = geom.Item(idx1)
+            ref1 = part.CreateReferenceFromObject(geom.Item(idx1))
 
             if constraint_type == "distance" and idx2 is not None:
-                ref2 = geom.Item(idx2)
-                cst = constraints.AddBiEltCst(0, ref1, ref2)  # catCstTypeDistance = 0
+                ref2 = part.CreateReferenceFromObject(geom.Item(idx2))
+                cst = constraints.AddBiEltCst(1, ref1, ref2)  # catCstTypeDistance
                 cst.Dimension.Value = value
             elif constraint_type == "distance":
-                cst = constraints.AddMonoEltCst(0, ref1)  # Length constraint
+                cst = constraints.AddMonoEltCst(5, ref1)  # catCstTypeLength
                 cst.Dimension.Value = value
             elif constraint_type == "radius":
-                cst = constraints.AddMonoEltCst(1, ref1)  # catCstTypeRadius = 1
+                cst = constraints.AddMonoEltCst(14, ref1)  # catCstTypeRadius
                 cst.Dimension.Value = value
             elif constraint_type == "angle":
                 if idx2 is None:
                     raise ValueError("Angle constraint requires 'geometry_index_2'.")
-                ref2 = geom.Item(idx2)
-                cst = constraints.AddBiEltCst(2, ref1, ref2)  # catCstTypeAngle = 2
+                ref2 = part.CreateReferenceFromObject(geom.Item(idx2))
+                cst = constraints.AddBiEltCst(6, ref1, ref2)  # catCstTypeAngle
                 cst.Dimension.Value = value
 
             return f"{constraint_type.capitalize()} constraint added: {value} {'mm' if constraint_type != 'angle' else '°'}"
 
         # Geometric constraints (no value needed)
         cst_type_map = {
-            "coincidence": 3,   # catCstTypeOn
+            "coincidence": 2,   # catCstTypeOn
             "tangent": 4,       # catCstTypeTangent
-            "perpendicular": 6, # catCstTypePerpendicular
-            "parallel": 7,      # catCstTypeParallel
-            "horizontal": 8,    # catCstTypeHorizontality
-            "vertical": 9,      # catCstTypeVerticality
-            "fix": 10,          # catCstTypeFix
+            "perpendicular": 11, # catCstTypePerpendicularity
+            "parallel": 8,      # catCstTypeParallelism
+            "horizontal": 10,   # catCstTypeHorizontality
+            "vertical": 13,     # catCstTypeVerticality
+            "fix": 0,           # catCstTypeReference
         }
 
         cst_code = cst_type_map.get(constraint_type)
@@ -449,15 +484,15 @@ class SketcherTools:
         if constraint_type in ("horizontal", "vertical", "fix"):
             if idx1 is None:
                 raise ValueError(f"Constraint '{constraint_type}' requires 'geometry_index_1'.")
-            ref1 = geom.Item(idx1)
+            ref1 = part.CreateReferenceFromObject(geom.Item(idx1))
             constraints.AddMonoEltCst(cst_code, ref1)
         else:
             if idx1 is None or idx2 is None:
                 raise ValueError(
                     f"Constraint '{constraint_type}' requires both 'geometry_index_1' and 'geometry_index_2'."
                 )
-            ref1 = geom.Item(idx1)
-            ref2 = geom.Item(idx2)
+            ref1 = part.CreateReferenceFromObject(geom.Item(idx1))
+            ref2 = part.CreateReferenceFromObject(geom.Item(idx2))
             constraints.AddBiEltCst(cst_code, ref1, ref2)
 
         return f"{constraint_type.capitalize()} constraint added"
