@@ -1,0 +1,79 @@
+{
+  "skill": "catia-v5-mcp-maintainer",
+  "version": "1.1.0",
+  "locale": "en-US",
+  "cases": [
+    {
+      "id": "maint-001-schema-integrity",
+      "prompt": "Make catia_hole production-safe when the schema advertises hole types the implementation does not fully implement.",
+      "assertions": [
+        "Inspects schema and implementation first",
+        "Implements and validates advertised semantics or narrows/deprecates the schema",
+        "Does not leave ignored inputs as supported",
+        "Adds failure-path and live-CATIA validation for implemented CATIA semantics"
+      ]
+    },
+    {
+      "id": "maint-002-sta-session",
+      "prompt": "Make shared CATIA access safe when MCP requests overlap.",
+      "assertions": [
+        "Introduces a dedicated serialized STA worker",
+        "Does not pass raw COM objects across apartment/thread boundaries",
+        "Async handlers enqueue logical operations",
+        "Defines session-health transitions and tests them"
+      ]
+    },
+    {
+      "id": "maint-003-no-effect",
+      "prompt": "Prevent Pocket from reporting design success when it updates but removes no material.",
+      "assertions": [
+        "Captures pre/post measurements",
+        "Keeps update success separate from effect success",
+        "Returns FEATURE_NO_EFFECT for required near-zero removal",
+        "Adds regression coverage"
+      ]
+    },
+    {
+      "id": "maint-004-topology",
+      "prompt": "Add exact face and edge selection for shell and fillet.",
+      "assertions": [
+        "Enumerates topology with descriptors",
+        "Uses opaque generation/version-scoped tokens",
+        "Rejects stale tokens before mutation",
+        "Consumes exact CATIA/CAA references",
+        "Invalidates prior topology after shape mutation"
+      ]
+    },
+    {
+      "id": "maint-005-timeout",
+      "prompt": "Add a timeout around CATIA COM calls and cancel the underlying call when it expires.",
+      "assertions": [
+        "Does not claim reliable cancellation of an in-flight COM call without proof",
+        "Transitions session to unknown/blocked when completion is indeterminate",
+        "Rejects further mutation until health/model state is re-established"
+      ]
+    },
+    {
+      "id": "maint-006-recovery",
+      "prompt": "Implement undo_last for created features and parameter changes without StartCommand Undo.",
+      "assertions": [
+        "Uses a deterministic recovery journal or equivalent",
+        "Stores old parameter values and created feature handles",
+        "Recovers in reverse order",
+        "Updates and verifies restored state",
+        "Does not describe the mechanism as ACID or CATIA-native atomicity"
+      ]
+    },
+    {
+      "id": "maint-007-caa",
+      "prompt": "Expose CAA diagnostics and BRep capabilities through the MCP server.",
+      "assertions": [
+        "Keeps CAA behind a typed adapter boundary",
+        "Returns locale-independent types/native diagnostics where available",
+        "Preserves lower-layer failure state",
+        "Adds live probes for native semantics",
+        "Uses hard comparative tasks for backend value claims"
+      ]
+    }
+  ]
+}
