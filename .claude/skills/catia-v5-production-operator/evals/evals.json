@@ -1,0 +1,85 @@
+{
+  "skill": "catia-v5-production-operator",
+  "version": "1.1.0",
+  "locale": "en-US",
+  "cases": [
+    {
+      "id": "op-001-basic-block",
+      "prompt": "Create a new CATIA part: a centered 100 x 60 mm rectangle on XY, padded 40 mm. Verify the result.",
+      "assertions": [
+        "Creates a new CATPart before requiring active-document context",
+        "Executes CATIA calls serially",
+        "Closes the sketch before Pad",
+        "Verifies update, feature structure, volume, and bounding box",
+        "Uses approximately 240000 mm^3 as an analytic cross-check rather than trusting tool success text"
+      ]
+    },
+    {
+      "id": "op-002-no-effect-pocket",
+      "prompt": "Cut a pocket in the active part. If CATIA reports success, continue immediately with the next features.",
+      "assertions": [
+        "Does not treat success text as sufficient",
+        "Captures pre/post volume",
+        "Classifies near-zero subtractive delta as NO_EFFECT",
+        "Stops further mutation until model integrity is re-established"
+      ]
+    },
+    {
+      "id": "op-003-special-hole",
+      "prompt": "Create a 10 mm through-hole with a 20 mm x 5 mm counterbore using type=counterbored.",
+      "assertions": [
+        "Checks active capability contract for specialized-hole implementation",
+        "Does not silently create a simple hole",
+        "Reports UNSUPPORTED_CAPABILITY under the baseline contract unless a verified stronger implementation is present"
+      ]
+    },
+    {
+      "id": "op-004-exact-edge",
+      "prompt": "Fillet exactly the four vertical edges of the box with R10 using the edge names returned by catia_list_edges.",
+      "assertions": [
+        "Does not treat edge names as durable topology tokens",
+        "Requires a deterministic exact edge resolver consumed by fillet",
+        "Returns unsupported exact-target result under the baseline contract instead of claiming success"
+      ]
+    },
+    {
+      "id": "op-005-parameter-propagation",
+      "prompt": "Change Pad.1 length from 15 mm to 20 mm and ensure downstream geometry remains valid.",
+      "assertions": [
+        "Discovers the exact parameter",
+        "Records prior value",
+        "Sets once, updates, and rereads",
+        "Re-measures downstream geometry",
+        "Uses deterministic revert if the change fails and the prior value is known"
+      ]
+    },
+    {
+      "id": "op-006-timeout",
+      "prompt": "A CATIA mutation timed out. Re-run the same mutation immediately so we know whether it worked.",
+      "assertions": [
+        "Does not replay the mutation blindly",
+        "Treats completion as indeterminate",
+        "Stops mutations until session health and model state are re-established"
+      ]
+    },
+    {
+      "id": "op-007-read-only",
+      "prompt": "Inspect the active CATPart and tell me whether its dimensions and volume are reasonable. Do not modify it.",
+      "assertions": [
+        "Uses read-only context and measurement tools",
+        "Does not call mutation/save tools",
+        "Reports evidence and uncertainty without changing the model"
+      ]
+    },
+    {
+      "id": "op-008-export",
+      "prompt": "Export the verified active part to STEP and capture an isometric screenshot.",
+      "assertions": [
+        "Performs final verification before persistence/export",
+        "Fits and sets an informative view before screenshot",
+        "Does not promise exact screenshot pixel size unless enforced",
+        "Reports only paths actually produced"
+      ]
+    }
+  ]
+}
