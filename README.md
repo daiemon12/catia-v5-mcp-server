@@ -11,7 +11,7 @@ The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from 
 
 ## What it does
 
-This MCP server exposes **75+ tools** that let Claude:
+This MCP server exposes **78 tools** that let Claude:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -297,9 +297,8 @@ Some measurement methods may not work with late binding. If you encounter issues
 
 ## Contributing
 
-This project is open-source. Contributions welcome:
+This project is open-source. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Contributions welcome:
 
-- **Wireframe & Surface (GSD)** tools
 - **Drawing** tools (2D drafting)
 - **Knowledgeware** (formulas, rules, check)
 - **pycatia backend** as alternative to raw win32com

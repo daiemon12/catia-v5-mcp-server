@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "catia-v5-mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP Server for CATIA V5 - Connect Claude AI to Dassault Systèmes CATIA V5 via COM Automation"
 readme = "README.md"
 license = "MIT"
