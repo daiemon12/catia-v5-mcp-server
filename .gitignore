@@ -8,3 +8,7 @@ build/
 .venv/
 venv/
 .env
+
+# GSD smoke test outputs
+GSD_SmokeTest*.CATPart
+gsd_smoke_test.jpg

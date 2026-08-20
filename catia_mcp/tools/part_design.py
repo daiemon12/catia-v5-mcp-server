@@ -440,7 +440,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         height = args["height"]
@@ -464,7 +464,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         depth = args["depth"]
@@ -482,7 +482,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         angle = args.get("angle", 360)
@@ -498,7 +498,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         angle = args.get("angle", 360)
@@ -514,7 +514,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         radius = args["radius"]
 
@@ -532,7 +532,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         length = args["length"]
         angle = args.get("angle", 45)
@@ -553,7 +553,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         diameter = args["diameter"]
@@ -574,7 +574,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         feature = self._get_last_shape(args.get("feature_name"))
         d1_count = args["dir1_count"]
@@ -601,7 +601,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         feature = self._get_last_shape(args.get("feature_name"))
         count = args["count"]
@@ -628,7 +628,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         plane_key = args["plane"].lower()
         planes = self.conn.get_origin_elements()
@@ -649,7 +649,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         thickness = args["thickness"]
         shell = sf.AddNewShell(self._get_last_shape(), 0, thickness, thickness)
@@ -672,7 +672,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         angle = args["angle"]
 
@@ -693,7 +693,7 @@ class PartDesignTools:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        sf = body.ShapeFactory
+        sf = part.ShapeFactory
 
         offset = args["offset"]
         thickness = sf.AddNewThickness(self._get_last_shape(), 0, offset)
