@@ -15,7 +15,7 @@ authors = [
 keywords = ["catia", "catia-v5", "mcp", "claude", "dassault-systemes", "cao", "cad", "automation"]
 
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
     "pywin32>=306",
 ]
 
