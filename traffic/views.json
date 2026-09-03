@@ -1,8 +1,8 @@
 {
   "totals": {
-    "count": 5758,
-    "uniques_last_seen": 408,
-    "count_last_window": 1185
+    "count": 5832,
+    "uniques_last_seen": 396,
+    "count_last_window": 1165
   },
   "history": [
     {
@@ -563,6 +563,11 @@
     {
       "timestamp": "2026-09-01T00:00:00Z",
       "count": 90,
+      "uniques": 34
+    },
+    {
+      "timestamp": "2026-09-02T00:00:00Z",
+      "count": 74,
       "uniques": 34
     }
   ]
