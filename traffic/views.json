@@ -1,8 +1,8 @@
 {
   "totals": {
-    "count": 8222,
-    "uniques_last_seen": 593,
-    "count_last_window": 1536
+    "count": 8760,
+    "uniques_last_seen": 525,
+    "count_last_window": 1405
   },
   "history": [
     {
@@ -674,6 +674,36 @@
       "timestamp": "2026-09-23T00:00:00Z",
       "count": 127,
       "uniques": 65
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00Z",
+      "count": 158,
+      "uniques": 56
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00Z",
+      "count": 62,
+      "uniques": 37
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00Z",
+      "count": 47,
+      "uniques": 24
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00Z",
+      "count": 28,
+      "uniques": 19
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00Z",
+      "count": 107,
+      "uniques": 52
+    },
+    {
+      "timestamp": "2026-09-29T00:00:00Z",
+      "count": 136,
+      "uniques": 51
     }
   ]
 }
