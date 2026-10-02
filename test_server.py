@@ -16,6 +16,7 @@ def test_imports():
     from catia_mcp.tools.document import DocumentTools
     from catia_mcp.tools.sketcher import SketcherTools
     from catia_mcp.tools.part_design import PartDesignTools
+    from catia_mcp.tools.diagnostics import DiagnosticsTools
     from catia_mcp.tools.gsd import GSDTools
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
@@ -30,6 +31,7 @@ def test_tool_definitions():
     from catia_mcp.tools.document import DocumentTools
     from catia_mcp.tools.sketcher import SketcherTools
     from catia_mcp.tools.part_design import PartDesignTools
+    from catia_mcp.tools.diagnostics import DiagnosticsTools
     from catia_mcp.tools.gsd import GSDTools
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
@@ -41,6 +43,7 @@ def test_tool_definitions():
         "Sketcher": SketcherTools(conn),
         "Part Design": PartDesignTools(conn),
         "GSD": GSDTools(conn),
+        "Diagnostics": DiagnosticsTools(conn),
         "Assembly": AssemblyTools(conn),
         "Measurement": MeasurementTools(conn),
         "Export": ExportTools(conn),

@@ -11,7 +11,7 @@ The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from 
 
 ## What it does
 
-This MCP server exposes **78 tools** that let Claude:
+This MCP server exposes **79 tools** that let Claude:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -153,6 +153,7 @@ catia-v5-mcp-server/
 │       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
+│       ├── diagnostics.py   # Installation diagnostics (1 tool)
 │       └── export.py        # Export & view control (4 tools)
 ├── pyproject.toml
 ├── requirements.txt
@@ -289,6 +290,11 @@ CATIA V5 Application
 | `catia_screenshot` | Capture 3D view to image |
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
+
+### Diagnostics (1)
+| Tool | Description |
+|------|-------------|
+| `catia_diagnose` | Report CATIA version/release/SP and probe which automation APIs this installation exposes. Run it first when tools fail with UNSUPPORTED_CAPABILITY, and paste its output in compatibility reports |
 
 ## Troubleshooting
 
