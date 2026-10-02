@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.1] — 2026-10-02
+
+### Fixed
+- **All measurement tools returned MKS values mislabeled as mm**: CATIA V5's
+  SPAWorkbench Measurable API returns meters/m2/m3 regardless of display
+  units, so `catia_get_inertia`, `catia_get_bounding_box` and
+  `catia_measure_distance` were off by factors of 1 000 to 1 000 000 000
+  (volume), and the derived mass was wrong by 1e9. All measurement results
+  are now converted to mm-based units at the server boundary; the inertia
+  matrix is explicitly labeled `inertia_matrix_kg_m2`. Feature creation
+  (pads, sketches, holes) was always genuinely in mm and is unchanged.
+  Reported by a user via LinkedIn after real-model testing.
+
 ## [0.2.0] — 2026-08-20
 
 ### Added

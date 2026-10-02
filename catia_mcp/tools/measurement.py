@@ -10,6 +10,15 @@ from typing import Any
 
 from catia_mcp.connection import CATIAConnection
 
+# CATIA V5's SPAWorkbench Measurable API returns every value in MKS units
+# (meters, m2, m3, kg.m2) regardless of the document's display units.
+# Feature creation APIs, by contrast, take millimeters. All measurement
+# results are therefore converted to mm-based units here, at the server
+# boundary, so agents always see consistent mm/mm2/mm3 values.
+_M_TO_MM = 1000.0
+_M2_TO_MM2 = 1e6
+_M3_TO_MM3 = 1e9
+
 
 class MeasurementTools:
     """Tools for measurement and analysis in CATIA V5."""
@@ -43,8 +52,11 @@ class MeasurementTools:
             {
                 "name": "catia_get_inertia",
                 "description": (
-                    "Get inertia properties of the active part: volume, surface area, "
-                    "center of gravity, mass (if density is defined), moments of inertia."
+                    "Get inertia properties of the active part: volume (mm3 and cm3), "
+                    "surface area (mm2 and cm2), center of gravity (mm), mass in kg "
+                    "(if a density is passed), inertia matrix (kg.m2, from the material "
+                    "density defined in CATIA). All values are converted server-side "
+                    "from CATIA's internal MKS measurement units."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -153,9 +165,9 @@ class MeasurementTools:
         ref2 = part.CreateReferenceFromObject(sel.Item(1).Value)
         sel.Clear()
 
-        # Measure
+        # Measure (SPAWorkbench returns meters; convert to mm)
         measurable = spa.GetMeasurable(ref1)
-        distance = measurable.GetMinimumDistance(ref2)
+        distance = measurable.GetMinimumDistance(ref2) * _M_TO_MM
 
         return f"Minimum distance between '{elem1_name}' and '{elem2_name}': {distance:.4f} mm"
 
@@ -169,32 +181,34 @@ class MeasurementTools:
         measurable = spa.GetMeasurable(ref)
 
         result: dict[str, Any] = {}
+        volume_m3: float | None = None
 
         try:
-            result["volume_mm3"] = round(measurable.Volume, 4)
-            result["volume_cm3"] = round(measurable.Volume / 1000, 4)
+            volume_m3 = measurable.Volume  # m3
+            result["volume_mm3"] = round(volume_m3 * _M3_TO_MM3, 4)
+            result["volume_cm3"] = round(volume_m3 * 1e6, 4)
         except Exception:
             pass
 
         try:
-            result["area_mm2"] = round(measurable.Area, 4)
-            result["area_cm2"] = round(measurable.Area / 100, 4)
+            area_m2 = measurable.Area  # m2
+            result["area_mm2"] = round(area_m2 * _M2_TO_MM2, 4)
+            result["area_cm2"] = round(area_m2 * 1e4, 4)
         except Exception:
             pass
 
         try:
             cog = [0.0, 0.0, 0.0]
-            measurable.GetCOG(cog)
+            measurable.GetCOG(cog)  # meters
             result["center_of_gravity_mm"] = {
-                "x": round(cog[0], 4),
-                "y": round(cog[1], 4),
-                "z": round(cog[2], 4),
+                "x": round(cog[0] * _M_TO_MM, 4),
+                "y": round(cog[1] * _M_TO_MM, 4),
+                "z": round(cog[2] * _M_TO_MM, 4),
             }
         except Exception:
             pass
 
-        if density and "volume_mm3" in result:
-            volume_m3 = result["volume_mm3"] * 1e-9  # mm3 to m3
+        if density and volume_m3 is not None:
             mass_kg = density * volume_m3
             result["mass_kg"] = round(mass_kg, 6)
             result["mass_g"] = round(mass_kg * 1000, 3)
@@ -202,8 +216,8 @@ class MeasurementTools:
 
         try:
             inertia = [0.0] * 9
-            measurable.GetInertia(inertia)
-            result["inertia_matrix"] = [
+            measurable.GetInertia(inertia)  # kg.m2, uses the material density set in CATIA
+            result["inertia_matrix_kg_m2"] = [
                 [round(inertia[0], 4), round(inertia[1], 4), round(inertia[2], 4)],
                 [round(inertia[3], 4), round(inertia[4], 4), round(inertia[5], 4)],
                 [round(inertia[6], 4), round(inertia[7], 4), round(inertia[8], 4)],
@@ -222,8 +236,9 @@ class MeasurementTools:
 
         measurable = spa.GetMeasurable(ref)
 
-        bbox = [0.0] * 6  # xmin, ymin, zmin, xmax, ymax, zmax
+        bbox = [0.0] * 6  # xmin, ymin, zmin, xmax, ymax, zmax (meters)
         measurable.GetBoundingBox(bbox)
+        bbox = [v * _M_TO_MM for v in bbox]
 
         result = {
             "min": {"x": round(bbox[0], 4), "y": round(bbox[1], 4), "z": round(bbox[2], 4)},
