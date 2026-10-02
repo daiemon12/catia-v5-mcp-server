@@ -143,10 +143,23 @@ class MeasurementTools:
             case _:
                 raise ValueError(f"Unknown measurement tool: {tool_name}")
 
+    def _spa_workbench(self) -> Any:
+        """Get the SPAWorkbench measurement workbench.
+
+        GetWorkbench is documented on Document, not Application, so try the
+        active document first and keep the application call as a fallback
+        for environments where it happens to resolve there.
+        """
+        doc = self.conn.active_document
+        try:
+            return doc.GetWorkbench("SPAWorkbench")
+        except AttributeError:
+            return self.conn.app.GetWorkbench("SPAWorkbench")
+
     def _measure_distance(self, elem1_name: str, elem2_name: str) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
-        spa = self.conn.app.GetWorkbench("SPAWorkbench")
+        spa = self._spa_workbench()
 
         # Create references from names
         sel = self.conn.hso
@@ -173,7 +186,7 @@ class MeasurementTools:
 
     def _get_inertia(self, density: float | None = None) -> str:
         self.conn.ensure_connected()
-        spa = self.conn.app.GetWorkbench("SPAWorkbench")
+        spa = self._spa_workbench()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
         ref = part.CreateReferenceFromObject(body)
@@ -229,7 +242,7 @@ class MeasurementTools:
 
     def _get_bounding_box(self) -> str:
         self.conn.ensure_connected()
-        spa = self.conn.app.GetWorkbench("SPAWorkbench")
+        spa = self._spa_workbench()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
         ref = part.CreateReferenceFromObject(body)

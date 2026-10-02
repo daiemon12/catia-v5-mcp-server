@@ -21,6 +21,7 @@ This MCP server exposes **79 tools** that let Claude:
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
+- **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
 
 ## Requirements
 

@@ -140,7 +140,9 @@ class CATIAMCPServer:
                     "missing workbench license (check Tools > Options > "
                     "Licensing, e.g. Part Design requires MD2/PD1-level "
                     "licensing). The tool is unavailable on this "
-                    "installation; do not retry with the same inputs."
+                    "installation; do not retry with the same inputs. Run "
+                    "catia_diagnose for a full report of what this "
+                    "installation exposes."
                 )
                 logger.error(error_msg, exc_info=True)
                 return [TextContent(type="text", text=error_msg)]

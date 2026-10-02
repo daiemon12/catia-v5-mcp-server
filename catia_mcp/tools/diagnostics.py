@@ -1,10 +1,13 @@
 """Diagnostics tool for CATIA V5 installations.
 
 Reports the exact CATIA release, and probes which automation APIs the
-running installation actually exposes. CATIA locks factory creation
-methods when the corresponding workbench license is not active, and old
-releases lack some APIs entirely, so the same server behaves differently
-across installations. This tool turns "what CATIA do you have and what
+running installation currently resolves. Installations differ: old
+releases lack some APIs entirely, and configurations without certain
+products/licenses (including floating licenses currently in use by
+others) may not expose or honor factory creation methods. The probes
+test COM name resolution under the server's late-bound dispatch; a
+method that resolves can still fail at call time if a license is
+missing, so treat results as strong hints, not proof. This tool turns "what CATIA do you have and what
 works on it" into a single call whose JSON output can be pasted into a
 compatibility report or GitHub issue.
 """
@@ -42,7 +45,7 @@ _HYBRID_SHAPE_FACTORY_METHODS = [
     "AddNewPointCoord",
     "AddNewLinePtPt",
     "AddNewPlaneOffset",
-    "AddNewPlane",
+    "AddNewPlane3Points",
     "AddNewSpline",
     "AddNewCircleCtrRad",
     "AddNewDirectionByCoord",
@@ -103,7 +106,7 @@ class DiagnosticsTools:
 
         report: dict[str, Any] = {"python": self._python_info(app)}
         report["catia"] = self._catia_info(app)
-        report["workbenches"] = self._workbench_probe(app)
+        report["workbenches"] = self._workbench_probe()
         report["factories"] = self._factory_probe()
         report["notes"] = self._notes(report)
 
@@ -141,15 +144,27 @@ class DiagnosticsTools:
             pass
         return info
 
-    def _workbench_probe(self, app: Any) -> dict[str, str]:
-        # Only documented automation workbenches. Note that "PartDesign" is
-        # NOT a valid GetWorkbench id in V5 automation: Part Design is
-        # reached through Part.ShapeFactory, so a GetWorkbench("PartDesign")
-        # failure is normal and proves nothing about licensing.
+    def _workbench_probe(self) -> dict[str, str]:
+        # GetWorkbench is a Document method in the V5 automation model, so
+        # probing needs an open document. SPAWorkbench is what the
+        # measurement tools rely on. Note that "PartDesign" is NOT a valid
+        # GetWorkbench id: Part Design is reached through Part.ShapeFactory,
+        # so a GetWorkbench("PartDesign") failure proves nothing.
+        try:
+            doc = self.conn.active_document
+        except Exception:
+            doc = None
+        if doc is None:
+            return {
+                "skipped": (
+                    "No active document. Open or create one, then run "
+                    "catia_diagnose again to probe workbenches."
+                )
+            }
         probes = {}
-        for wb in ("SPAWorkbench", "KweWorkbench"):
+        for wb in ("SPAWorkbench",):
             try:
-                app.GetWorkbench(wb)
+                doc.GetWorkbench(wb)
                 probes[wb] = "available"
             except Exception as e:
                 probes[wb] = f"unavailable: {e}"
@@ -197,32 +212,63 @@ class DiagnosticsTools:
         probe["factory"] = "available"
         exposed: list[str] = []
         missing: list[str] = []
+        errored: dict[str, str] = {}
         for m in methods:
-            # getattr resolution through COM GetIDsOfNames mirrors exactly
-            # how the real tools call these methods.
+            # getattr resolution mirrors how the real tools reach these
+            # methods under late-bound dispatch (it does not invoke them).
             try:
                 getattr(factory, m)
                 exposed.append(m)
             except AttributeError:
                 missing.append(m)
-            except Exception:
-                exposed.append(m)
+            except Exception as e:
+                errored[m] = str(e)
         probe["exposed_methods"] = exposed
         probe["missing_methods"] = missing
+        if errored:
+            probe["errored_methods"] = errored
         return probe
 
     def _notes(self, report: dict[str, Any]) -> list[str]:
         notes: list[str] = []
         factories = report.get("factories", {})
-        sf = factories.get("shape_factory", {})
-        if sf.get("factory") == "available" and sf.get("missing_methods"):
-            notes.append(
-                "ShapeFactory exists but some creation methods are not "
-                "exposed. On CATIA this usually means the Part Design "
-                "workbench license (MD2/PD1 level) is not active on this "
-                "installation, or the release predates the API. Check "
-                "Tools > Options > Licensing."
-            )
+        labels = {
+            "shape_factory": ("ShapeFactory", "Part Design (MD2/PD1 level)"),
+            "hybrid_shape_factory": (
+                "HybridShapeFactory",
+                "Generative Shape Design (GS1/GSD level)",
+            ),
+        }
+        for key, (name, lic) in labels.items():
+            probe = factories.get(key, {})
+            status = probe.get("factory", "")
+            if status.startswith("unavailable"):
+                notes.append(
+                    f"{name} itself is not reachable on this installation "
+                    f"({status}). The corresponding tools will fail."
+                )
+            elif probe.get("missing_methods"):
+                notes.append(
+                    f"{name} exists but some creation methods did not "
+                    "resolve. This often indicates the " + lic + " license "
+                    "is not active right now (floating licenses can come "
+                    "and go during the day) or the release predates the "
+                    "API. Check Tools > Options > Licensing and re-run "
+                    "catia_diagnose later to compare."
+                )
+            if probe.get("errored_methods"):
+                notes.append(
+                    f"Some {name} probes errored (neither exposed nor "
+                    "cleanly missing); include this report in a GitHub "
+                    "issue."
+                )
+        wb = report.get("workbenches", {})
+        for wb_name, status in wb.items():
+            if wb_name != "skipped" and str(status).startswith("unavailable"):
+                notes.append(
+                    f"{wb_name} is unavailable; measurement tools "
+                    "(distance, inertia, bounding box) will fail."
+                )
         release = report.get("catia", {}).get("release")
         if isinstance(release, int) and release < 26:
             notes.append(

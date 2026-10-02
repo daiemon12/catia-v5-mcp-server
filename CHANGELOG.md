@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- **`catia_diagnose` tool** (79 tools total): reports the exact CATIA
+  version/release/service pack, the Python/pywin32 environment, and probes
+  which automation APIs the installation resolves (ShapeFactory and
+  HybridShapeFactory methods matching exactly what the real tools call,
+  SPAWorkbench availability), with guidance notes. Motivated by a V5R20
+  field report where Part Design feature creation was intermittently
+  unavailable (floating license).
+- Compatibility notes section in the README (V5R20 and V5-6 2020 field
+  reports).
+
+### Fixed
+- Missing COM APIs now return a clear `UNSUPPORTED_CAPABILITY` message
+  naming the likely cause (release age or missing/busy workbench license)
+  instead of a raw AttributeError.
+- Measurement tools obtain SPAWorkbench from the active document first:
+  `GetWorkbench` is a Document method in the V5 automation model, not an
+  Application method.
+
 ## [0.2.1] — 2026-10-02
 
 ### Fixed

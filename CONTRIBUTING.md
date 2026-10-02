@@ -23,8 +23,8 @@ PRs may be written in English or Chinese (欢迎使用中文).
    generators or experiment files belong in your fork, not in the shared
    codebase.
 5. **Match the existing style.** Tools live in `catia_mcp/tools/<module>.py`
-   as a `*Tools` class exposing `get_tools()` (MCP schemas) and
-   `handle_tool()` (routing); names are `catia_*`. Look at an existing module
+   as a `*Tools` class exposing `get_tool_definitions()` (MCP schemas) and
+   `execute()` (routing); names are `catia_*`. Look at an existing module
    (e.g. `part_design.py`) and follow the same patterns, including defensive
    `try/except` around COM calls that vary across CATIA releases.
 
