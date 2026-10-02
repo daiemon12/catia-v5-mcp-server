@@ -29,6 +29,20 @@ This MCP server exposes **78 tools** that let Claude:
 - **Python 3.10+**
 - **Claude Desktop** or **Claude Code**
 
+### Compatibility notes (field reports)
+
+- **V5R20 (2010)**: document management, sketcher, GSD geometrical sets, views
+  and screenshots confirmed working. Part Design feature creation
+  (`ShapeFactory.AddNewPad` etc.) was not exposed on the tested installation;
+  this can be the release age or a missing Part Design license (MD2/PD1) since
+  CATIA locks factory creation methods when the workbench is not licensed.
+  Affected tools now return a clear `UNSUPPORTED_CAPABILITY` message instead
+  of a raw COM error.
+- **V5-6 2020**: full tool surface in active use by contributors.
+
+Reports from other releases are welcome, open an issue with your CATIA version
+and the tool results.
+
 ## Quick Install (Recommended)
 
 ```bash

@@ -123,6 +123,25 @@ class CATIAMCPServer:
                 logger.info("Tool result: %s", result[:200] if len(result) > 200 else result)
                 return [TextContent(type="text", text=result)]
 
+            except AttributeError as e:
+                # pywin32 raises AttributeError when a COM object does not
+                # expose a method. On CATIA this usually means the running
+                # edition/release does not provide that API: either an old
+                # V5 release, or the required workbench license (e.g. Part
+                # Design) is not active, in which case factories exist but
+                # their creation methods are locked.
+                error_msg = (
+                    f"UNSUPPORTED_CAPABILITY in {name}: the running CATIA "
+                    f"does not expose the required automation API ({e}). "
+                    "This usually means an older CATIA V5 release or a "
+                    "missing workbench license (check Tools > Options > "
+                    "Licensing, e.g. Part Design requires MD2/PD1-level "
+                    "licensing). The tool is unavailable on this "
+                    "installation; do not retry with the same inputs."
+                )
+                logger.error(error_msg, exc_info=True)
+                return [TextContent(type="text", text=error_msg)]
+
             except Exception as e:
                 error_msg = f"Error in {name}: {e}"
                 logger.error(error_msg, exc_info=True)
