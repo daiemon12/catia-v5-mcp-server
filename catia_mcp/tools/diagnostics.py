@@ -205,7 +205,41 @@ class DiagnosticsTools:
         result["hybrid_shape_factory"] = self._probe_methods(
             part, "HybridShapeFactory", _HYBRID_SHAPE_FACTORY_METHODS
         )
+        result["measurable"] = self._measurable_probe(doc, part)
         return result
+
+    def _measurable_probe(self, doc: Any, part: Any) -> dict[str, Any]:
+        # Old releases miss parts of the Measurable API (field-confirmed on
+        # V5R20: GetBoundingBox, GetInertia and minimum distance are absent
+        # while Volume/Area/GetCOG work). Probe method-name resolution only;
+        # Volume/Area are properties, so reading them would invoke a
+        # measurement and is deliberately not done here.
+        probe: dict[str, Any] = {}
+        try:
+            try:
+                spa = doc.GetWorkbench("SPAWorkbench")
+            except AttributeError:
+                spa = self.conn.app.GetWorkbench("SPAWorkbench")
+            body = part.Bodies.Item(1)
+            ref = part.CreateReferenceFromObject(body)
+            measurable = spa.GetMeasurable(ref)
+        except Exception as e:
+            probe["measurable"] = f"unavailable: {e}"
+            return probe
+        probe["measurable"] = "available"
+        missing = []
+        exposed = []
+        for m in ("GetCOG", "GetBoundingBox", "GetInertia", "GetMinimumDistance"):
+            try:
+                getattr(measurable, m)
+                exposed.append(m)
+            except AttributeError:
+                missing.append(m)
+            except Exception:
+                exposed.append(m)
+        probe["exposed_methods"] = exposed
+        probe["missing_methods"] = missing
+        return probe
 
     def _probe_methods(
         self, part: Any, factory_attr: str, methods: list[str]
@@ -273,6 +307,15 @@ class DiagnosticsTools:
                     "cleanly missing); include this report in a GitHub "
                     "issue."
                 )
+        meas = factories.get("measurable", {})
+        if meas.get("missing_methods"):
+            missing = ", ".join(meas["missing_methods"])
+            notes.append(
+                "The Measurable API lacks " + missing + " on this release "
+                "(known on V5R20). The corresponding measurement tools "
+                "will return UNSUPPORTED_CAPABILITY; volume, area and "
+                "center of gravity still work."
+            )
         wb = report.get("workbenches", {})
         for wb_name, status in wb.items():
             if wb_name != "skipped" and str(status).startswith("unavailable"):

@@ -37,6 +37,12 @@ This MCP server exposes **79 tools** that let Claude:
   views, screenshots). An initial report of `ShapeFactory.AddNewPad` being
   missing turned out to be a **stale pywin32 `gen_py` cache**, not the
   release: clearing the cache restored the methods (see Troubleshooting).
+  Measurement is partial on R20: volume, area, center of gravity and
+  parameters work, but the Measurable API lacks `GetBoundingBox`,
+  `GetInertia` and minimum-distance measurement there, so
+  `catia_get_bounding_box` and `catia_measure_distance` return
+  `UNSUPPORTED_CAPABILITY` and `catia_get_inertia` omits the inertia
+  matrix.
 - **V5-6 2020**: full tool surface in active use by contributors.
 
 Reports from other releases are welcome, open an issue with your CATIA version
