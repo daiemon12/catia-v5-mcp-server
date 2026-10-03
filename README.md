@@ -32,17 +32,15 @@ This MCP server exposes **79 tools** that let Claude:
 
 ### Compatibility notes (field reports)
 
-- **V5R20 (2010)**: document management, sketcher, GSD geometrical sets, views
-  and screenshots confirmed working. Part Design feature creation
-  (`ShapeFactory.AddNewPad` etc.) was not exposed on the tested installation;
-  this can be the release age or a missing Part Design license (MD2/PD1) since
-  CATIA locks factory creation methods when the workbench is not licensed.
-  Affected tools now return a clear `UNSUPPORTED_CAPABILITY` message instead
-  of a raw COM error.
+- **V5R20 (2010)**: core workflow confirmed working end to end (document
+  management, sketcher, Part Design pad creation, GSD geometrical sets,
+  views, screenshots). An initial report of `ShapeFactory.AddNewPad` being
+  missing turned out to be a **stale pywin32 `gen_py` cache**, not the
+  release: clearing the cache restored the methods (see Troubleshooting).
 - **V5-6 2020**: full tool surface in active use by contributors.
 
 Reports from other releases are welcome, open an issue with your CATIA version
-and the tool results.
+and the tool results (the `catia_diagnose` tool output is the ideal payload).
 
 ## Quick Install (Recommended)
 
@@ -298,6 +296,16 @@ CATIA V5 Application
 | `catia_diagnose` | Report CATIA version/release/SP and probe which automation APIs this installation exposes. Run it first when tools fail with UNSUPPORTED_CAPABILITY, and paste its output in compatibility reports |
 
 ## Troubleshooting
+
+### "AttributeError" on methods that should exist (AddNewPad, etc.)
+A stale pywin32 COM cache is the most common cause, confirmed in the field:
+methods that genuinely exist stop resolving. Delete the generated bindings
+cache and restart the server:
+```
+%LOCALAPPDATA%\Temp\gen_py\        (or %TEMP%\gen_py\)
+```
+Close CATIA and the MCP server first, delete the whole `gen_py` folder, then
+restart. Run `catia_diagnose` to verify which APIs resolve afterwards.
 
 ### "pywin32 is not installed"
 ```bash

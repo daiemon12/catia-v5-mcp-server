@@ -127,22 +127,21 @@ class CATIAMCPServer:
                 return [TextContent(type="text", text=result)]
 
             except AttributeError as e:
-                # pywin32 raises AttributeError when a COM object does not
-                # expose a method. On CATIA this usually means the running
-                # edition/release does not provide that API: either an old
-                # V5 release, or the required workbench license (e.g. Part
-                # Design) is not active, in which case factories exist but
-                # their creation methods are locked.
+                # pywin32 raises AttributeError when a COM method does not
+                # resolve. Field-confirmed causes, most common first: a
+                # stale pywin32 gen_py cache (methods that exist stop
+                # resolving), an older V5 release lacking the API, or a
+                # workbench license that is not active.
                 error_msg = (
-                    f"UNSUPPORTED_CAPABILITY in {name}: the running CATIA "
-                    f"does not expose the required automation API ({e}). "
-                    "This usually means an older CATIA V5 release or a "
-                    "missing workbench license (check Tools > Options > "
-                    "Licensing, e.g. Part Design requires MD2/PD1-level "
-                    "licensing). The tool is unavailable on this "
-                    "installation; do not retry with the same inputs. Run "
-                    "catia_diagnose for a full report of what this "
-                    "installation exposes."
+                    f"UNSUPPORTED_CAPABILITY in {name}: the required CATIA "
+                    f"automation API did not resolve ({e}). Most common "
+                    "cause: a stale pywin32 COM cache; close CATIA and the "
+                    "server, delete the %TEMP%\\gen_py folder, restart and "
+                    "retry once. Otherwise this CATIA release may lack the "
+                    "API, or the workbench license is not active (check "
+                    "Tools > Options > Licensing; floating licenses come "
+                    "and go). Run catia_diagnose for a full report of what "
+                    "this installation exposes."
                 )
                 logger.error(error_msg, exc_info=True)
                 return [TextContent(type="text", text=error_msg)]

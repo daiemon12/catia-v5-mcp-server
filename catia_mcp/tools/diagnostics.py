@@ -15,6 +15,7 @@ compatibility report or GitHub issue.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -121,6 +122,13 @@ class DiagnosticsTools:
             import win32com
 
             info["pywin32_build"] = getattr(win32com, "__build__", "unknown")
+            gen_path = getattr(win32com, "__gen_path__", None)
+            if gen_path:
+                info["gen_py_cache"] = gen_path
+                try:
+                    info["gen_py_entries"] = len(os.listdir(gen_path))
+                except Exception:
+                    pass
         except Exception:
             info["pywin32_build"] = "unavailable"
         return info
@@ -250,11 +258,14 @@ class DiagnosticsTools:
             elif probe.get("missing_methods"):
                 notes.append(
                     f"{name} exists but some creation methods did not "
-                    "resolve. This often indicates the " + lic + " license "
-                    "is not active right now (floating licenses can come "
+                    "resolve. Field-confirmed first suspect: a stale "
+                    "pywin32 gen_py cache (close CATIA and the server, "
+                    "delete the %TEMP%\\gen_py folder, restart, re-run "
+                    "catia_diagnose). Otherwise the " + lic + " license "
+                    "may not be active right now (floating licenses come "
                     "and go during the day) or the release predates the "
-                    "API. Check Tools > Options > Licensing and re-run "
-                    "catia_diagnose later to compare."
+                    "API. Check Tools > Options > Licensing and compare "
+                    "two catia_diagnose runs."
                 )
             if probe.get("errored_methods"):
                 notes.append(

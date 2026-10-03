@@ -17,8 +17,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 - Missing COM APIs now return a clear `UNSUPPORTED_CAPABILITY` message
-  naming the likely cause (release age or missing/busy workbench license)
-  instead of a raw AttributeError.
+  naming the likely causes instead of a raw AttributeError. Field testing
+  on V5R20 identified a stale pywin32 `gen_py` cache as the most common
+  cause (methods that exist stop resolving); the error message, the
+  diagnostics notes and a new Troubleshooting entry now point to clearing
+  it first. V5R20 is confirmed running the full core workflow (part,
+  sketch, pad) once the cache is cleared.
 - Measurement tools obtain SPAWorkbench from the active document first:
   `GetWorkbench` is a Document method in the V5 automation model, not an
   Application method.
