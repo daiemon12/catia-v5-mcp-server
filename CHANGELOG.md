@@ -11,7 +11,7 @@ All notable changes to this project are documented here.
   HybridShapeFactory methods matching exactly what the real tools call,
   SPAWorkbench availability), with guidance notes. Motivated by a V5R20
   field report where Part Design feature creation was intermittently
-  unavailable (floating license).
+  unavailable (root cause later identified: stale pywin32 cache).
 - Compatibility notes section in the README (V5R20 and V5-6 2020 field
   reports).
 
