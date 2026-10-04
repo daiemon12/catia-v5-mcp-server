@@ -1,7 +1,7 @@
 """Drafting (Drawing) tools for CATIA V5.
 
 Built from field-validated automation probes run on CATIA V5R20 by
-community tester ESE3X: Drawing document creation, generative view
+contributor ESE3X: Drawing document creation, generative view
 creation (Sheets / Views.Add / GenerativeBehavior / DefineFrontView /
 Update) and view positioning are confirmed working through COM.
 
