@@ -75,8 +75,10 @@ class MeasurementTools:
             {
                 "name": "catia_get_bounding_box",
                 "description": (
-                    "Get the bounding box of the active part. "
-                    "Returns min/max coordinates in mm."
+                    "Get the bounding box of the active part from a vertex "
+                    "sweep of the final shape, in mm. Exact for planar-faced "
+                    "solids; curved faces may extend beyond the reported "
+                    "bounds (stated in the result)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -147,6 +149,55 @@ class MeasurementTools:
             case _:
                 raise ValueError(f"Unknown measurement tool: {tool_name}")
 
+    # In/out CATSafeArrayVariant parameters (GetCOG, GetPoint,
+    # GetInertiaMatrix) do not marshal through late-bound IDispatch: the
+    # Python list is passed by value and never mutated. The documented
+    # workaround (used by pycatia) is to run the array-filling call inside
+    # CATIA via SystemService.Evaluate and return the values as a string.
+    _VBS_COG = (
+        'Function GetCOGStr(oRef)\n'
+        '    Dim oSPA, oMeas\n'
+        '    Dim aCOG(2)\n'
+        '    Set oSPA = CATIA.ActiveDocument.GetWorkbench("SPAWorkbench")\n'
+        '    Set oMeas = oSPA.GetMeasurable(oRef)\n'
+        '    oMeas.GetCOG aCOG\n'
+        '    GetCOGStr = CStr(aCOG(0)) & ";" & CStr(aCOG(1)) & ";" & CStr(aCOG(2))\n'
+        'End Function'
+    )
+    _VBS_POINT = (
+        'Function GetPointStr(oRef)\n'
+        '    Dim oSPA, oMeas\n'
+        '    Dim aPt(2)\n'
+        '    Set oSPA = CATIA.ActiveDocument.GetWorkbench("SPAWorkbench")\n'
+        '    Set oMeas = oSPA.GetMeasurable(oRef)\n'
+        '    oMeas.GetPoint aPt\n'
+        '    GetPointStr = CStr(aPt(0)) & ";" & CStr(aPt(1)) & ";" & CStr(aPt(2))\n'
+        'End Function'
+    )
+    _VBS_INERTIA = (
+        'Function GetInertiaStr(oBody)\n'
+        '    Dim oSPA, oInertias, oInertia, i, sOut\n'
+        '    Dim aM(8)\n'
+        '    Set oSPA = CATIA.ActiveDocument.GetWorkbench("SPAWorkbench")\n'
+        '    Set oInertias = oSPA.Inertias\n'
+        '    Set oInertia = oInertias.Add(oBody)\n'
+        '    oInertia.GetInertiaMatrix aM\n'
+        '    sOut = CStr(oInertia.Mass)\n'
+        '    For i = 0 To 8\n'
+        '        sOut = sOut & ";" & CStr(aM(i))\n'
+        '    Next\n'
+        '    GetInertiaStr = sOut\n'
+        'End Function'
+    )
+
+    def _evaluate_floats(self, script: str, func: str, params: list) -> list[float]:
+        """Run a VBScript function inside CATIA and parse its ;-joined floats.
+
+        CStr honors the Windows locale, so decimal commas are normalized.
+        """
+        raw = self.conn.app.SystemService.Evaluate(script, 0, func, params)
+        return [float(tok.replace(",", ".")) for tok in str(raw).split(";")]
+
     def _spa_workbench(self) -> Any:
         """Get the SPAWorkbench measurement workbench.
 
@@ -172,42 +223,44 @@ class MeasurementTools:
         """
         sel = self.conn.hso
         topo = re.match(r"^(Face|Edge)\.(\d+)$", name)
-        if topo:
-            kind, idx = topo.group(1), int(topo.group(2))
-            body = self.conn.get_active_part_body()
-            if body.Shapes.Count == 0:
-                raise RuntimeError(
-                    f"Cannot resolve '{name}': the active body has no solid "
-                    "shape to enumerate topology from."
-                )
-            last_shape = body.Shapes.Item(body.Shapes.Count)
-            sel.Clear()
-            sel.Add(last_shape)
-            sel.Search(f"Topology.{kind},sel")
-            count = sel.Count
-            if idx < 1 or idx > count:
+        try:
+            if topo:
+                kind, idx = topo.group(1), int(topo.group(2))
+                body = self.conn.get_active_part_body()
+                if body.Shapes.Count == 0:
+                    raise RuntimeError(
+                        f"Cannot resolve '{name}': the active body has no "
+                        "solid shape to enumerate topology from."
+                    )
+                last_shape = body.Shapes.Item(body.Shapes.Count)
                 sel.Clear()
-                raise RuntimeError(
-                    f"'{name}' is out of range: the final shape exposes "
-                    f"{count} {kind.lower()}(s). Use catia_list_faces / "
-                    "catia_list_edges to enumerate valid indices."
-                )
-            ref = sel.Item(idx).Reference
-            sel.Clear()
-            return ref
+                sel.Add(last_shape)
+                sel.Search(f"Topology.{kind},sel")
+                count = sel.Count
+                if idx < 1 or idx > count:
+                    raise RuntimeError(
+                        f"'{name}' is out of range: the final shape exposes "
+                        f"{count} {kind.lower()}(s). Use catia_list_faces / "
+                        "catia_list_edges to enumerate valid indices."
+                    )
+                return sel.Item(idx).Reference
 
-        sel.Clear()
-        sel.Search(f"Name={name},all")
-        if sel.Count == 0:
             sel.Clear()
-            raise RuntimeError(
-                f"Element '{name}' not found by tree name. Use feature or "
-                "sketch names (e.g. 'Pad.1'), or the indexed topology form "
-                "Face.N / Edge.N from catia_list_faces / catia_list_edges."
-            )
-        obj = sel.Item(1).Value
-        sel.Clear()
-        return part.CreateReferenceFromObject(obj)
+            sel.Search(f"Name={name},all")
+            if sel.Count == 0:
+                raise RuntimeError(
+                    f"Element '{name}' not found by tree name. Use feature "
+                    "or sketch names (e.g. 'Pad.1'), or the indexed topology "
+                    "form Face.N / Edge.N from catia_list_faces / "
+                    "catia_list_edges."
+                )
+            obj = sel.Item(1).Value
+            return part.CreateReferenceFromObject(obj)
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
 
     def _measure_distance(self, elem1_name: str, elem2_name: str) -> str:
         self.conn.ensure_connected()
@@ -250,15 +303,14 @@ class MeasurementTools:
             pass
 
         try:
-            cog = [0.0, 0.0, 0.0]
-            measurable.GetCOG(cog)  # meters
+            cog = self._evaluate_floats(self._VBS_COG, "GetCOGStr", [ref])
             result["center_of_gravity_mm"] = {
                 "x": round(cog[0] * _M_TO_MM, 4),
                 "y": round(cog[1] * _M_TO_MM, 4),
                 "z": round(cog[2] * _M_TO_MM, 4),
             }
-        except Exception:
-            pass
+        except Exception as e:
+            result["center_of_gravity_mm"] = f"unavailable: {e}"
 
         if density and volume_m3 is not None:
             mass_kg = density * volume_m3
@@ -267,39 +319,77 @@ class MeasurementTools:
             result["density_kg_m3"] = density
 
         try:
-            inertia = [0.0] * 9
-            measurable.GetInertia(inertia)  # kg.m2, uses the material density set in CATIA
+            # Inertia data lives on the SPAWorkbench Inertia object, not on
+            # Measurable (Measurable.GetInertia does not exist in V5).
+            vals = self._evaluate_floats(self._VBS_INERTIA, "GetInertiaStr", [body])
+            result["mass_from_material_kg"] = round(vals[0], 6)
+            inertia = vals[1:10]
             result["inertia_matrix_kg_m2"] = [
                 [round(inertia[0], 4), round(inertia[1], 4), round(inertia[2], 4)],
                 [round(inertia[3], 4), round(inertia[4], 4), round(inertia[5], 4)],
                 [round(inertia[6], 4), round(inertia[7], 4), round(inertia[8], 4)],
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            result["inertia_matrix_kg_m2"] = f"unavailable: {e}"
 
         return json.dumps(result, indent=2)
 
     def _get_bounding_box(self) -> str:
+        # Measurable has no bounding-box method in any V5 release, so the
+        # box is computed from the final shape's vertices (exact for
+        # planar-faced solids; curved faces can extend past their vertices,
+        # which the output states explicitly).
         self.conn.ensure_connected()
-        spa = self._spa_workbench()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
-        ref = part.CreateReferenceFromObject(body)
+        if body.Shapes.Count == 0:
+            raise RuntimeError("The active body has no solid shape yet.")
+        last_shape = body.Shapes.Item(body.Shapes.Count)
 
-        measurable = spa.GetMeasurable(ref)
+        sel = self.conn.hso
+        refs = []
+        try:
+            sel.Clear()
+            sel.Add(last_shape)
+            sel.Search("Topology.Vertex,sel")
+            count = sel.Count
+            if count == 0:
+                raise RuntimeError(
+                    "UNSUPPORTED_CAPABILITY: the final shape exposes no "
+                    "vertices (fully curved solid); a bounding box cannot be "
+                    "derived through the V5 automation API."
+                )
+            if count > 200:
+                count = 200  # cap the sweep; stated in the output below
+            for i in range(1, count + 1):
+                refs.append(sel.Item(i).Reference)
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
 
-        bbox = [0.0] * 6  # xmin, ymin, zmin, xmax, ymax, zmax (meters)
-        measurable.GetBoundingBox(bbox)
-        bbox = [v * _M_TO_MM for v in bbox]
+        xs, ys, zs = [], [], []
+        for ref in refs:
+            pt = self._evaluate_floats(self._VBS_POINT, "GetPointStr", [ref])
+            xs.append(pt[0] * _M_TO_MM)
+            ys.append(pt[1] * _M_TO_MM)
+            zs.append(pt[2] * _M_TO_MM)
 
         result = {
-            "min": {"x": round(bbox[0], 4), "y": round(bbox[1], 4), "z": round(bbox[2], 4)},
-            "max": {"x": round(bbox[3], 4), "y": round(bbox[4], 4), "z": round(bbox[5], 4)},
+            "min": {"x": round(min(xs), 4), "y": round(min(ys), 4), "z": round(min(zs), 4)},
+            "max": {"x": round(max(xs), 4), "y": round(max(ys), 4), "z": round(max(zs), 4)},
             "dimensions": {
-                "length_x": round(bbox[3] - bbox[0], 4),
-                "length_y": round(bbox[4] - bbox[1], 4),
-                "length_z": round(bbox[5] - bbox[2], 4),
+                "length_x": round(max(xs) - min(xs), 4),
+                "length_y": round(max(ys) - min(ys), 4),
+                "length_z": round(max(zs) - min(zs), 4),
             },
+            "method": (
+                f"vertex sweep over {len(refs)} vertices of the final shape; "
+                "exact for planar-faced solids, curved faces may extend "
+                "beyond these bounds"
+                + (" (vertex count capped at 200)" if len(refs) == 200 else "")
+            ),
         }
         return json.dumps(result, indent=2)
 

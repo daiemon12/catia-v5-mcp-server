@@ -7,6 +7,7 @@ RectPattern, CircPattern, Mirror, Rib, Slot, Shell, Thickness, Draft.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
@@ -138,8 +139,9 @@ class PartDesignTools:
                         "edge_name": {
                             "type": "string",
                             "description": (
-                                "Name of the edge to fillet (e.g., 'Edge.1'). "
-                                "Use catia_list_edges to find edge names."
+                                "Indexed edge to fillet ('Edge.N' from "
+                                "catia_list_edges). Omit to fillet all edges "
+                                "of the last feature."
                             ),
                         },
                     },
@@ -163,7 +165,7 @@ class PartDesignTools:
                         },
                         "edge_name": {
                             "type": "string",
-                            "description": "Name of the edge to chamfer",
+                            "description": "Indexed edge to chamfer ('Edge.N' from catia_list_edges). Omit to chamfer all edges of the last feature.",
                         },
                     },
                     "required": ["length"],
@@ -279,10 +281,6 @@ class PartDesignTools:
                             "description": "Mirror plane: 'xy', 'yz', or 'zx'",
                             "enum": ["xy", "yz", "zx"],
                         },
-                        "feature_name": {
-                            "type": "string",
-                            "description": "Feature to mirror. Defaults to last feature.",
-                        },
                     },
                     "required": ["plane"],
                 },
@@ -303,7 +301,11 @@ class PartDesignTools:
                         "faces_to_remove": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Names of faces to remove (create openings). E.g., ['Face.1']",
+                            "description": (
+                                "REQUIRED: indexed faces to remove and open "
+                                "('Face.N' from catia_list_faces); the first "
+                                "one anchors the shell."
+                            ),
                         },
                     },
                     "required": ["thickness"],
@@ -324,7 +326,7 @@ class PartDesignTools:
                         },
                         "face_name": {
                             "type": "string",
-                            "description": "Name of the face to draft",
+                            "description": "REQUIRED: indexed face to draft ('Face.N' from catia_list_faces)",
                         },
                         "pulling_direction": {
                             "type": "string",
@@ -351,7 +353,7 @@ class PartDesignTools:
                         },
                         "face_name": {
                             "type": "string",
-                            "description": "Name of the face to offset",
+                            "description": "REQUIRED: indexed face to thicken ('Face.N' from catia_list_faces)",
                         },
                     },
                     "required": ["offset"],
@@ -509,13 +511,30 @@ class PartDesignTools:
         pocket.DirectionOrientation = 1 if reverse else 0
         part.UpdateObject(pocket)
 
+        explicit_direction = "direction" in args
+        flipped = False
         after = self._body_volume_mm3(part, body)
-        if before is not None and after is not None and after >= before:
-            # No material removed: the cut landed on the empty side. Flip
-            # and re-verify instead of reporting a false success.
+        if (
+            before is not None
+            and after is not None
+            and after >= before
+            and not explicit_direction
+        ):
+            # No material removed and the caller did not pin the side: flip
+            # and re-verify instead of reporting a false success. An explicit
+            # 'direction' is honored as-is and reported honestly below.
             pocket.DirectionOrientation = 0 if reverse else 1
             part.UpdateObject(pocket)
-            after = self._body_volume_mm3(part, body)
+            new_after = self._body_volume_mm3(part, body)
+            if new_after is not None and new_after < before:
+                after = new_after
+                flipped = True
+            else:
+                # The flip did not help either: restore the requested
+                # orientation so the tree reflects the original intent.
+                pocket.DirectionOrientation = 1 if reverse else 0
+                part.UpdateObject(pocket)
+                after = self._body_volume_mm3(part, body)
 
         self.conn.refresh_display()
 
@@ -524,13 +543,16 @@ class PartDesignTools:
             if removed <= 0:
                 return (
                     f"FEATURE_NO_EFFECT: pocket '{pocket.Name}' was created in "
-                    f"the tree but removed no material in either direction "
-                    f"(volume stayed {before:.1f} mm3). Check that the profile "
-                    "intersects the solid."
+                    f"the tree but removed no material"
+                    + (" in the requested direction" if explicit_direction
+                       else " in either direction")
+                    + f" (volume stayed {before:.1f} mm3). Check that the "
+                    "profile intersects the solid."
                 )
+            flip_note = " (direction auto-flipped to reach material)" if flipped else ""
             return (
-                f"Pocket '{pocket.Name}' created: {depth} mm deep. Removed "
-                f"{removed:.1f} mm3 ({before:.1f} -> {after:.1f})."
+                f"Pocket '{pocket.Name}' created: {depth} mm deep{flip_note}. "
+                f"Removed {removed:.1f} mm3 ({before:.1f} -> {after:.1f})."
             )
         return (
             f"Pocket created: {depth} mm deep. Feature: '{pocket.Name}' "
@@ -569,6 +591,47 @@ class PartDesignTools:
         self.conn.refresh_display()
         return f"Groove (revolution cut) created: {angle}°. Feature: '{groove.Name}'"
 
+    def _topo_reference(self, kind: str, index: int) -> Any:
+        """Resolve Face.N / Edge.N on the body's final shape to a Reference.
+
+        References come from the selection's Reference property because
+        CreateReferenceFromObject rejects HSO-resolved topology cells
+        (field-verified E_INVALIDARG). Indices match catia_list_faces /
+        catia_list_edges.
+        """
+        body = self.conn.get_active_part_body()
+        if body.Shapes.Count == 0:
+            raise RuntimeError("The active body has no solid shape yet.")
+        last_shape = body.Shapes.Item(body.Shapes.Count)
+        sel = self.conn.hso
+        try:
+            sel.Clear()
+            sel.Add(last_shape)
+            sel.Search(f"Topology.{kind},sel")
+            count = sel.Count
+            if index < 1 or index > count:
+                raise RuntimeError(
+                    f"{kind}.{index} is out of range: the final shape exposes "
+                    f"{count} {kind.lower()}(s). Use catia_list_faces / "
+                    "catia_list_edges to enumerate valid indices."
+                )
+            return sel.Item(index).Reference
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _topo_index(name: str, kind: str) -> int:
+        m = re.match(rf"^{kind}\.(\d+)$", name or "")
+        if not m:
+            raise ValueError(
+                f"Expected an indexed name like '{kind}.1' (from "
+                f"catia_list_faces / catia_list_edges), got '{name}'."
+            )
+        return int(m.group(1))
+
     def _fillet(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
@@ -576,16 +639,25 @@ class PartDesignTools:
         sf = part.ShapeFactory
 
         radius = args["radius"]
+        edge_name = args.get("edge_name")
+        if edge_name:
+            target = self._topo_reference("Edge", self._topo_index(edge_name, "Edge"))
+            scope = edge_name
+        else:
+            # Whole-feature fallback: a Reference to the feature fillets its
+            # edges with tangency propagation.
+            target = part.CreateReferenceFromObject(self._get_last_shape())
+            scope = "all edges of the last feature"
 
         fillet = sf.AddNewSolidEdgeFilletWithConstantRadius(
-            self._get_last_shape(),
+            target,
             1,       # catTangencyFilletEdgePropagation
             radius,
         )
 
         part.UpdateObject(fillet)
         self.conn.refresh_display()
-        return f"Fillet created: R{radius} mm. Feature: '{fillet.Name}'"
+        return f"Fillet created: R{radius} mm on {scope}. Feature: '{fillet.Name}'"
 
     def _chamfer(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -595,18 +667,28 @@ class PartDesignTools:
 
         length = args["length"]
         angle = args.get("angle", 45)
+        edge_name = args.get("edge_name")
+        if edge_name:
+            target = self._topo_reference("Edge", self._topo_index(edge_name, "Edge"))
+            scope = edge_name
+        else:
+            target = part.CreateReferenceFromObject(self._get_last_shape())
+            scope = "all edges of the last feature"
 
+        # AddNewChamfer(iObjectToChamfer, iPropagation, iMode, iOrientation,
+        #               iLength1, iLength2OrAngle) - 6 parameters.
         chamfer = sf.AddNewChamfer(
-            self._get_last_shape(),
+            target,
             1,       # catTangencyChamferPropagation
             0,       # catLengthAngleChamfer mode
+            0,       # catNoReverseChamfer orientation
             length,
             angle,
         )
 
         part.UpdateObject(chamfer)
         self.conn.refresh_display()
-        return f"Chamfer created: {length} mm at {angle}°. Feature: '{chamfer.Name}'"
+        return f"Chamfer created: {length} mm at {angle} deg on {scope}. Feature: '{chamfer.Name}'"
 
     def _hole(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -618,16 +700,32 @@ class PartDesignTools:
         diameter = args["diameter"]
         depth = args["depth"]
 
-        hole = sf.AddNewHole(sketch, depth)
-        hole.Diameter = diameter
+        # AddNewHole takes a support FACE reference; the sketch-positioned
+        # form is AddNewHoleFromSketch. Diameter is a read-only Length
+        # parameter object whose .Value is assigned.
+        hole = sf.AddNewHoleFromSketch(sketch, depth)
+        hole.Diameter.Value = diameter
         hole.BottomType = 0  # catFlatBottom
+
+        hole_type = args.get("type", "simple")
+        type_map = {"simple": 0, "tapered": 1, "counterbored": 2, "countersunk": 3}
+        type_note = ""
+        if hole_type in type_map and hole_type != "simple":
+            try:
+                hole.Type = type_map[hole_type]
+                type_note = (
+                    f" Type: {hole_type} (head dimensions keep CATIA "
+                    "defaults; adjust in the tree if needed)."
+                )
+            except Exception:
+                type_note = f" Type '{hole_type}' not applied (API rejected it); simple hole created."
 
         if args.get("threaded", False):
             hole.ThreadingMode = 1  # catThreaded
 
         part.UpdateObject(hole)
         self.conn.refresh_display()
-        return f"Hole created: D{diameter} mm, depth {depth} mm. Feature: '{hole.Name}'"
+        return f"Hole created: D{diameter} mm, depth {depth} mm. Feature: '{hole.Name}'.{type_note}"
 
     def _rect_pattern(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -641,12 +739,18 @@ class PartDesignTools:
         d2_count = args.get("dir2_count", 1)
         d2_spacing = args.get("dir2_spacing", 0)
 
+        # AddNewRectPattern takes 12 parameters; empty-name references let
+        # CATIA pick the default directions (recorded-macro pattern).
+        ref1 = part.CreateReferenceFromName("")
+        ref2 = part.CreateReferenceFromName("")
         pattern = sf.AddNewRectPattern(
             feature,
             d1_count, d2_count,
             d1_spacing, d2_spacing,
-            1, 1,  # direction specification
-            True,   # keep specification
+            1, 1,          # position of the original along dir1/dir2
+            ref1, ref2,    # direction references (defaults)
+            False, False,  # reversed dir1/dir2
+            0.0,           # rotation angle
         )
 
         part.UpdateObject(pattern)
@@ -666,14 +770,19 @@ class PartDesignTools:
         count = args["count"]
         angular_spacing = args.get("angular_spacing", 360.0 / count)
 
+        # AddNewCircPattern takes 12 parameters; instances around the axis
+        # belong in the ANGULAR slot (3rd), radial count stays 1.
+        refc = part.CreateReferenceFromName("")
+        refa = part.CreateReferenceFromName("")
         pattern = sf.AddNewCircPattern(
             feature,
-            count,
-            1,              # rows
-            angular_spacing,
-            0,              # row spacing
-            1, 1,           # direction specification
-            True,           # keep specification
+            1, count,              # radial copies, angular copies
+            0.0, angular_spacing,  # radial step, angular step (deg)
+            1, 1,                  # position of the original
+            refc, refa,            # rotation center / axis (defaults)
+            True,                  # reversed rotation axis
+            0.0,                   # rotation angle
+            True,                  # radius aligned
         )
 
         part.UpdateObject(pattern)
@@ -697,12 +806,17 @@ class PartDesignTools:
         mirror_plane = planes[plane_key]
         ref = part.CreateReferenceFromObject(mirror_plane)
 
-        feature = self._get_last_shape(args.get("feature_name"))
+        # AddNewMirror takes only the plane reference and mirrors the
+        # body's existing shapes; per-feature mirroring is not expressible
+        # through this API.
         mirror = sf.AddNewMirror(ref)
 
         part.UpdateObject(mirror)
         self.conn.refresh_display()
-        return f"Mirror created about {plane_key.upper()} plane. Feature: '{mirror.Name}'"
+        return (
+            f"Mirror created about {plane_key.upper()} plane (mirrors the "
+            f"body's shapes). Feature: '{mirror.Name}'"
+        )
 
     def _shell(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -711,21 +825,33 @@ class PartDesignTools:
         sf = part.ShapeFactory
 
         thickness = args["thickness"]
-        shell = sf.AddNewShell(self._get_last_shape(), 0, thickness, thickness)
-
-        # Remove specified faces if any
-        faces_to_remove = args.get("faces_to_remove", [])
-        for face_name in faces_to_remove:
+        faces = args.get("faces_to_remove") or []
+        if not faces:
+            raise ValueError(
+                "catia_shell requires 'faces_to_remove' with at least one "
+                "indexed face name ('Face.N' from catia_list_faces): "
+                "AddNewShell's first parameter is the face to remove."
+            )
+        refs = [
+            self._topo_reference("Face", self._topo_index(f, "Face"))
+            for f in faces
+        ]
+        # AddNewShell(iFaceToRemove, iInternalThickness, iExternalThickness)
+        shell = sf.AddNewShell(refs[0], thickness, 0)
+        skipped = []
+        for extra, ref in zip(faces[1:], refs[1:]):
             try:
-                face = body.Shapes.Item(face_name) if face_name else None
-                if face:
-                    shell.AddFaceToRemove(part.CreateReferenceFromObject(face))
+                shell.AddFaceToRemove(ref)
             except Exception:
-                pass
+                skipped.append(extra)
 
         part.UpdateObject(shell)
         self.conn.refresh_display()
-        return f"Shell created: {thickness} mm wall thickness. Feature: '{shell.Name}'"
+        note = f" (could not add: {', '.join(skipped)})" if skipped else ""
+        return (
+            f"Shell created: {thickness} mm wall, removed "
+            f"{len(faces) - len(skipped)} face(s){note}. Feature: '{shell.Name}'"
+        )
 
     def _draft(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -734,19 +860,36 @@ class PartDesignTools:
         sf = part.ShapeFactory
 
         angle = args["angle"]
+        face_name = args.get("face_name")
+        if not face_name:
+            raise ValueError(
+                "catia_draft requires 'face_name' ('Face.N' from "
+                "catia_list_faces): the face to draft."
+            )
+        face_ref = self._topo_reference("Face", self._topo_index(face_name, "Face"))
 
         plane_key = args.get("pulling_direction", "xy").lower()
         planes = self.conn.get_origin_elements()
         neutral = planes.get(plane_key)
         if not neutral:
             raise ValueError(f"Unknown pulling direction plane: {plane_key}")
-
         neutral_ref = part.CreateReferenceFromObject(neutral)
-        draft = sf.AddNewDraft(self._get_last_shape(), neutral_ref, angle)
+
+        # Pulling direction = the selected plane's normal.
+        direction = {"xy": (0, 0, 1), "yz": (1, 0, 0), "zx": (0, 1, 0)}[plane_key]
+        parting_ref = part.CreateReferenceFromName("")
+
+        # AddNewDraft(iFaceToDraft, iNeutral, iNeutralMode, iParting,
+        #             iDirX, iDirY, iDirZ, iMode, iAngle, iMultiselectionMode)
+        draft = sf.AddNewDraft(
+            face_ref, neutral_ref, 0, parting_ref,
+            direction[0], direction[1], direction[2],
+            0, angle, 0,
+        )
 
         part.UpdateObject(draft)
         self.conn.refresh_display()
-        return f"Draft created: {angle}° angle. Feature: '{draft.Name}'"
+        return f"Draft created: {angle} deg on {face_name}. Feature: '{draft.Name}'"
 
     def _thickness(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -755,11 +898,20 @@ class PartDesignTools:
         sf = part.ShapeFactory
 
         offset = args["offset"]
-        thickness = sf.AddNewThickness(self._get_last_shape(), 0, offset)
+        face_name = args.get("face_name")
+        if not face_name:
+            raise ValueError(
+                "catia_thickness requires 'face_name' ('Face.N' from "
+                "catia_list_faces): the face to thicken."
+            )
+        face_ref = self._topo_reference("Face", self._topo_index(face_name, "Face"))
+
+        # AddNewThickness(iFaceToThicken, iOffset) - 2 parameters.
+        thickness = sf.AddNewThickness(face_ref, offset)
 
         part.UpdateObject(thickness)
         self.conn.refresh_display()
-        return f"Thickness added: {offset} mm offset. Feature: '{thickness.Name}'"
+        return f"Thickness added: {offset} mm on {face_name}. Feature: '{thickness.Name}'"
 
     def _list_features(self) -> str:
         self.conn.ensure_connected()
@@ -789,12 +941,17 @@ class PartDesignTools:
                 return "No solid shape in the active body yet"
             last_shape = body.Shapes.Item(body.Shapes.Count)
             sel = self.conn.hso
-            sel.Clear()
-            sel.Add(last_shape)
-            sel.Search("Topology.Face,sel")
-            for i in range(1, sel.Count + 1):
-                faces.append({"index": i, "name": f"Face.{i}"})
-            sel.Clear()
+            try:
+                sel.Clear()
+                sel.Add(last_shape)
+                sel.Search("Topology.Face,sel")
+                for i in range(1, sel.Count + 1):
+                    faces.append({"index": i, "name": f"Face.{i}"})
+            finally:
+                try:
+                    sel.Clear()
+                except Exception:
+                    pass
         except Exception as e:
             return f"Could not enumerate faces: {e}"
 
@@ -813,15 +970,20 @@ class PartDesignTools:
         try:
             # Access boundary representation
             sel = self.conn.hso
-            sel.Clear()
-            sel.Add(last_shape)
-            sel.Search("Topology.Edge,sel")
-
-            for i in range(1, sel.Count + 1):
-                # Canonical indexed name: this is what catia_measure_distance
-                # accepts. Raw HSO names are long and unusable in searches.
-                edges.append({"index": i, "name": f"Edge.{i}"})
-            sel.Clear()
+            try:
+                sel.Clear()
+                sel.Add(last_shape)
+                sel.Search("Topology.Edge,sel")
+                for i in range(1, sel.Count + 1):
+                    # Canonical indexed name accepted by catia_measure_distance,
+                    # catia_fillet and catia_chamfer. Raw HSO names are long
+                    # and unusable in searches.
+                    edges.append({"index": i, "name": f"Edge.{i}"})
+            finally:
+                try:
+                    sel.Clear()
+                except Exception:
+                    pass
         except Exception as e:
             return f"Could not enumerate edges: {e}. Use CATIA selection to identify edge names."
 

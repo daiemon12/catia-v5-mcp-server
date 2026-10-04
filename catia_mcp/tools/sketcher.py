@@ -318,10 +318,14 @@ class SketcherTools:
                 pass
         self._ensure_sketch_open()
         sketch = self._active_sketch
-        sketch.CloseEdition()
-        self.conn.get_active_part().UpdateObject(sketch)
-        self._active_sketch = None
-        self._active_factory = None
+        try:
+            sketch.CloseEdition()
+            self.conn.get_active_part().UpdateObject(sketch)
+        finally:
+            # Clear cached state even when the close fails, so a broken
+            # handle cannot poison subsequent calls.
+            self._active_sketch = None
+            self._active_factory = None
         self.conn.refresh_display()
         return "Sketch closed. You can now apply Part Design features (pad, pocket, etc.)."
 
@@ -370,6 +374,10 @@ class SketcherTools:
         # optional start/end parameters in radians that leave it open.
         start_rad = math.radians(start_angle)
         end_rad = math.radians(end_angle)
+        # CreateCircle requires endParam strictly greater than startParam;
+        # normalize sweeps that wrap past 0 degrees.
+        while end_rad <= start_rad:
+            end_rad += 2 * math.pi
         factory.CreateCircle(cx, cy, radius, start_rad, end_rad)
         return (
             f"Arc created at ({cx}, {cy}), radius={radius} mm, "

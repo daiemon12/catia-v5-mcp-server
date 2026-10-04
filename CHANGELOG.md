@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.2.2] — 2026-10-04
 
 ### Added
 - **`catia_diagnose` tool** (79 tools total): reports the exact CATIA
@@ -15,12 +15,31 @@ All notable changes to this project are documented here.
 - Compatibility notes section in the README (V5R20 and V5-6 2020 field
   reports).
 
-### Added (continued)
 - **`catia_list_faces` tool** (80 tools total) and canonical indexed names
   (`Edge.N` / `Face.N`) from `catia_list_edges`, feeding the new topology
   path of `catia_measure_distance`.
 
 ### Fixed
+- **Part Design overhaul after an adversarial API audit (30 confirmed
+  findings)**: fillet, chamfer, draft and thickness now target real
+  Face.N/Edge.N references and honor their schema arguments (previously
+  silently ignored); shell anchors on the face to remove per the
+  documented 3-parameter signature; rectangular and circular patterns use
+  the full 12-parameter signatures (they failed with
+  DISP_E_BADPARAMCOUNT on every call, and circular counts now go in the
+  angular slot); holes use AddNewHoleFromSketch, set Diameter.Value
+  correctly and honor the type argument; mirror drops its dead
+  feature_name argument. Center of gravity and the inertia matrix are
+  now computed through SystemService.Evaluate because in/out safearrays
+  do not marshal through late-bound COM (previous COG output was the
+  caller's unmodified zeros), with inertia data from the SPAWorkbench
+  Inertia object (Measurable.GetInertia does not exist); mass from the
+  CATIA material is reported. The bounding box is computed from a vertex
+  sweep (Measurable.GetBoundingBox does not exist in any V5 release) and
+  states its exactness. Pocket honors an explicitly requested direction
+  instead of silently flipping it. Arc sweeps crossing 0 degrees are
+  normalized. HSO selection and sketch state are cleaned up on all error
+  paths.
 - **`catia_measure_distance` can now target faces and edges**: topology
   resolves via the final shape's HSO enumeration and the selection's
   Reference property (`CreateReferenceFromObject` rejects HSO topology
@@ -42,8 +61,6 @@ All notable changes to this project are documented here.
 - **`catia_close_sketch` lost track of open sketches across server
   restarts**: it now re-adopts the document's in-work sketch instead of
   failing while CATIA visibly holds a sketch open.
-- `catia_measure_distance` documents its real element contract (tree-named
-  features/sketches only; faces and edges not yet addressable).
 - Missing COM APIs now return a clear `UNSUPPORTED_CAPABILITY` message
   naming the likely causes instead of a raw AttributeError. Field testing
   on V5R20 identified a stale pywin32 `gen_py` cache as the most common
