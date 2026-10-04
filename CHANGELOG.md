@@ -13,7 +13,7 @@ All notable changes to this project are documented here.
 - **Drafting module (experimental, 84 tools total)**: `catia_new_drawing`
   creates a CATDrawing and `catia_drawing_add_view` projects an open Part
   as a generative front view (xy/yz/zx) on the active sheet, built from
-  automation probes field-validated on CATIA V5R20 by community tester
+  automation probes field-validated on CATIA V5R20 by contributor
   ESE3X. Dimensioning follows the MCP philosophy (the agent decides where
   dimensions belong): `catia_drawing_list_view_geometry` exposes a view's
   projected 2D geometry as indexed elements and
