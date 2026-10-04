@@ -6,6 +6,7 @@ Distance, angle, inertia, bounding box, and part property queries.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
@@ -32,10 +33,10 @@ class MeasurementTools:
                 "name": "catia_measure_distance",
                 "description": (
                     "Measure the minimum distance between two geometry elements. "
-                    "Returns distance in mm. Elements are resolved by tree name "
-                    "(features, sketches, e.g. 'Pad.1', 'Sketch.2'); faces and "
-                    "edges are NOT yet addressable (known limitation), do not "
-                    "pass 'Face.1' or outputs of catia_list_edges."
+                    "Returns distance in mm. Elements resolve by tree name "
+                    "(features, sketches, e.g. 'Pad.1', 'Sketch.2') or by "
+                    "indexed topology ('Face.N' / 'Edge.N' as enumerated by "
+                    "catia_list_faces / catia_list_edges on the final solid)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -159,27 +160,62 @@ class MeasurementTools:
         except AttributeError:
             return self.conn.app.GetWorkbench("SPAWorkbench")
 
+    def _resolve_reference(self, part: Any, name: str) -> Any:
+        """Resolve an element name to a CATIA Reference.
+
+        Tree-named objects (Pad.1, Sketch.2) resolve through a Name= search.
+        Topology uses the indexed form Face.N / Edge.N over the body's final
+        shape, matching the indices listed by catia_list_faces and
+        catia_list_edges. Topology references come from the selection's
+        Reference property: CreateReferenceFromObject rejects HSO-resolved
+        topology cells (field-verified E_INVALIDARG on V5R20).
+        """
+        sel = self.conn.hso
+        topo = re.match(r"^(Face|Edge)\.(\d+)$", name)
+        if topo:
+            kind, idx = topo.group(1), int(topo.group(2))
+            body = self.conn.get_active_part_body()
+            if body.Shapes.Count == 0:
+                raise RuntimeError(
+                    f"Cannot resolve '{name}': the active body has no solid "
+                    "shape to enumerate topology from."
+                )
+            last_shape = body.Shapes.Item(body.Shapes.Count)
+            sel.Clear()
+            sel.Add(last_shape)
+            sel.Search(f"Topology.{kind},sel")
+            count = sel.Count
+            if idx < 1 or idx > count:
+                sel.Clear()
+                raise RuntimeError(
+                    f"'{name}' is out of range: the final shape exposes "
+                    f"{count} {kind.lower()}(s). Use catia_list_faces / "
+                    "catia_list_edges to enumerate valid indices."
+                )
+            ref = sel.Item(idx).Reference
+            sel.Clear()
+            return ref
+
+        sel.Clear()
+        sel.Search(f"Name={name},all")
+        if sel.Count == 0:
+            sel.Clear()
+            raise RuntimeError(
+                f"Element '{name}' not found by tree name. Use feature or "
+                "sketch names (e.g. 'Pad.1'), or the indexed topology form "
+                "Face.N / Edge.N from catia_list_faces / catia_list_edges."
+            )
+        obj = sel.Item(1).Value
+        sel.Clear()
+        return part.CreateReferenceFromObject(obj)
+
     def _measure_distance(self, elem1_name: str, elem2_name: str) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         spa = self._spa_workbench()
 
-        # Create references from names
-        sel = self.conn.hso
-        sel.Clear()
-
-        # Search for the elements
-        sel.Search(f"Name={elem1_name},all")
-        if sel.Count == 0:
-            raise RuntimeError(f"Element '{elem1_name}' not found")
-        ref1 = part.CreateReferenceFromObject(sel.Item(1).Value)
-
-        sel.Clear()
-        sel.Search(f"Name={elem2_name},all")
-        if sel.Count == 0:
-            raise RuntimeError(f"Element '{elem2_name}' not found")
-        ref2 = part.CreateReferenceFromObject(sel.Item(1).Value)
-        sel.Clear()
+        ref1 = self._resolve_reference(part, elem1_name)
+        ref2 = self._resolve_reference(part, elem2_name)
 
         # Measure (SPAWorkbench returns meters; convert to mm)
         measurable = spa.GetMeasurable(ref1)

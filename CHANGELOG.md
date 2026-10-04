@@ -15,7 +15,16 @@ All notable changes to this project are documented here.
 - Compatibility notes section in the README (V5R20 and V5-6 2020 field
   reports).
 
+### Added (continued)
+- **`catia_list_faces` tool** (80 tools total) and canonical indexed names
+  (`Edge.N` / `Face.N`) from `catia_list_edges`, feeding the new topology
+  path of `catia_measure_distance`.
+
 ### Fixed
+- **`catia_measure_distance` can now target faces and edges**: topology
+  resolves via the final shape's HSO enumeration and the selection's
+  Reference property (`CreateReferenceFromObject` rejects HSO topology
+  cells, field-verified E_INVALIDARG). Awaiting live field confirmation.
 - **`catia_sketch_constraint` never worked**: it passed raw geometry elements
   where the API requires Reference objects (DISP_E_TYPEMISMATCH on every
   call), and most CatConstraintType enum codes were wrong (only tangent was

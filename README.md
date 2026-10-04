@@ -11,7 +11,7 @@ The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from 
 
 ## What it does
 
-This MCP server exposes **79 tools** that let Claude:
+This MCP server exposes **80 tools** that let Claude:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -45,10 +45,11 @@ This MCP server exposes **79 tools** that let Claude:
   matrix.
 - **V5-6 2020**: full tool surface in active use by contributors.
 
-Known limitation (all releases): `catia_measure_distance` resolves tree-named
-objects only (`Pad.1`, `Sketch.2`); faces and edges are not yet addressable
-through the selection search. Contributions welcome on a topology reference
-resolver.
+`catia_measure_distance` accepts tree names (`Pad.1`, `Sketch.2`) and indexed
+topology (`Face.N` / `Edge.N` from `catia_list_faces` / `catia_list_edges`).
+The topology path follows a V5R20 field diagnosis (selection Reference
+property instead of `CreateReferenceFromObject`, which rejects HSO topology)
+and awaits live confirmation on real CATIA; reports welcome.
 
 Reports from other releases are welcome, open an issue with your CATIA version
 and the tool results (the `catia_diagnose` tool output is the ideal payload).
@@ -159,7 +160,7 @@ catia-v5-mcp-server/
 │       ├── __init__.py
 │       ├── document.py      # Document management (9 tools)
 │       ├── sketcher.py      # 2D Sketch tools (11 tools)
-│       ├── part_design.py   # 3D Part Design features (15 tools)
+│       ├── part_design.py   # 3D Part Design features (16 tools)
 │       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
@@ -223,7 +224,7 @@ CATIA V5 Application
 | `catia_sketch_constraint` | Add dimensional/geometric constraint |
 | `catia_sketch_get_geometry` | List sketch geometry elements |
 
-### Part Design Tools (15)
+### Part Design Tools (16)
 | Tool | Description |
 |------|-------------|
 | `catia_pad` | Pad (extrusion) |
@@ -240,7 +241,8 @@ CATIA V5 Application
 | `catia_draft` | Draft angle |
 | `catia_thickness` | Thickness offset |
 | `catia_list_features` | List features in body |
-| `catia_list_edges` | List edges for fillet/chamfer |
+| `catia_list_edges` | List edges of the final solid as indexed Edge.N names |
+| `catia_list_faces` | List faces of the final solid as indexed Face.N names |
 
 ### Generative Shape Design Tools (24)
 | Tool | Description |

@@ -367,7 +367,22 @@ class PartDesignTools:
             },
             {
                 "name": "catia_list_edges",
-                "description": "List all edges of the active solid body with their names for use with fillet/chamfer.",
+                "description": (
+                    "List the edges of the final solid shape as indexed names "
+                    "(Edge.N). These indices feed catia_measure_distance; for "
+                    "fillet/chamfer targeting see each tool's own contract."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+            {
+                "name": "catia_list_faces",
+                "description": (
+                    "List the faces of the final solid shape as indexed names "
+                    "(Face.N) for use with catia_measure_distance."
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -405,6 +420,8 @@ class PartDesignTools:
                 return self._thickness(arguments)
             case "catia_list_features":
                 return self._list_features()
+            case "catia_list_faces":
+                return self._list_faces()
             case "catia_list_edges":
                 return self._list_edges()
             case _:
@@ -762,6 +779,29 @@ class PartDesignTools:
             return "No features in the active body"
         return json.dumps(features, indent=2)
 
+    def _list_faces(self) -> str:
+        self.conn.ensure_connected()
+        body = self.conn.get_active_part_body()
+
+        faces = []
+        try:
+            if body.Shapes.Count == 0:
+                return "No solid shape in the active body yet"
+            last_shape = body.Shapes.Item(body.Shapes.Count)
+            sel = self.conn.hso
+            sel.Clear()
+            sel.Add(last_shape)
+            sel.Search("Topology.Face,sel")
+            for i in range(1, sel.Count + 1):
+                faces.append({"index": i, "name": f"Face.{i}"})
+            sel.Clear()
+        except Exception as e:
+            return f"Could not enumerate faces: {e}"
+
+        if not faces:
+            return "No faces found on the final shape"
+        return json.dumps(faces, indent=2)
+
     def _list_edges(self) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
@@ -778,10 +818,9 @@ class PartDesignTools:
             sel.Search("Topology.Edge,sel")
 
             for i in range(1, sel.Count + 1):
-                edges.append({
-                    "index": i,
-                    "name": sel.Item(i).Value.Name if hasattr(sel.Item(i).Value, "Name") else f"Edge.{i}",
-                })
+                # Canonical indexed name: this is what catia_measure_distance
+                # accepts. Raw HSO names are long and unusable in searches.
+                edges.append({"index": i, "name": f"Edge.{i}"})
             sel.Clear()
         except Exception as e:
             return f"Could not enumerate edges: {e}. Use CATIA selection to identify edge names."
