@@ -1,17 +1,20 @@
 # CATIA V5 MCP Server
 
-> Connect Claude AI to Dassault Systemes CATIA V5 via the Model Context Protocol (MCP).
+> Connect AI agents to Dassault Systemes CATIA V5 via the Model Context Protocol (MCP) — works with Claude, Cursor, Windsurf, Cline, VS Code and any MCP-compatible client.
 
+[![Release](https://img.shields.io/github/v/release/daiemon12/catia-v5-mcp-server)](https://github.com/daiemon12/catia-v5-mcp-server/releases)
+[![CI](https://github.com/daiemon12/catia-v5-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/daiemon12/catia-v5-mcp-server/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Clones](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-clones.json)](traffic/clones.json)
 [![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-views.json)](traffic/views.json)
 
-The first open-source MCP server for CATIA V5. Drive CATIA V5 CAD modeling from Claude Desktop or Claude Code using natural language.
+The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, measurement, drawing export and COM automation in natural language, from any AI agent that speaks MCP.
 
 ![Repository traffic](traffic/chart.png)
 
 ## What it does
 
-This MCP server exposes **80 tools** that let Claude:
+This MCP server exposes **80 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -28,7 +31,7 @@ This MCP server exposes **80 tools** that let Claude:
 - **Windows** (COM automation is Windows-only)
 - **CATIA V5** installed and licensed (R2016+)
 - **Python 3.10+**
-- **Claude Desktop** or **Claude Code**
+- Any **MCP client**: Claude Desktop, Claude Code, Cursor, Windsurf, Cline, VS Code (Copilot/MCP), and others
 
 ### Compatibility notes (field reports)
 
@@ -60,7 +63,7 @@ cd catia-v5-mcp-server
 bash setup.sh
 ```
 
-The script handles everything: dependencies, Claude Desktop config, and verification.
+The script handles everything: dependencies, Claude Desktop configuration, and verification. Using another MCP client? See the per-client setup below.
 
 ## Manual Installation
 
@@ -82,13 +85,18 @@ Or manually:
 pip install mcp pywin32
 ```
 
-### 3. Configure Claude Desktop
+### 3. Connect your MCP client
 
-Edit your Claude Desktop config file:
+The server speaks standard MCP over stdio, so it works with every
+MCP-compatible client. The command is always the same:
+`python -m catia_mcp` (or an absolute path to `catia_mcp/server.py`).
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+Edit the config file:
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-Add the server:
 
 ```json
 {
@@ -100,35 +108,102 @@ Add the server:
   }
 }
 ```
+</details>
 
-Or with an absolute path:
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add catia-v5 python -- -m catia_mcp
+```
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your project):
 
 ```json
 {
   "mcpServers": {
     "catia-v5": {
       "command": "python",
-      "args": ["C:/path/to/catia-v5-mcp-server/catia_mcp/server.py"]
+      "args": ["-m", "catia_mcp"]
     }
   }
 }
 ```
+</details>
 
-### 4. For Claude Code
+<details>
+<summary><b>Windsurf</b></summary>
 
-```bash
-claude mcp add catia-v5 python -- -m catia_mcp
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "catia-v5": {
+      "command": "python",
+      "args": ["-m", "catia_mcp"]
+    }
+  }
+}
 ```
+</details>
 
-### 5. Start CATIA V5
+<details>
+<summary><b>Cline</b></summary>
 
-Make sure CATIA V5 is running before asking Claude to interact with it. The server will automatically connect to the running instance.
+In VS Code: Cline icon > MCP Servers > Configure, then add:
+
+```json
+{
+  "mcpServers": {
+    "catia-v5": {
+      "command": "python",
+      "args": ["-m", "catia_mcp"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>VS Code (GitHub Copilot / native MCP)</b></summary>
+
+Add to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "catia-v5": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "catia_mcp"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Other MCP hosts</b></summary>
+
+Any client that launches stdio MCP servers works: configure a server
+named `catia-v5` with command `python` and args `["-m", "catia_mcp"]`,
+run from a machine where CATIA V5 is installed.
+</details>
+
+### 4. Start CATIA V5
+
+Make sure CATIA V5 is running before asking your agent to interact with it. The server will automatically connect to the running instance.
 
 If CATIA V5 is not running, the server will attempt to launch it (requires CATIA to be registered as COM server: `cnext.exe /regserver`).
 
 ## Usage Examples
 
-Once configured, just talk to Claude:
+Once configured, just talk to your AI agent:
 
 ### Create a simple part
 > "Create a new CATIA part. Draw a 100x60mm rectangle centered at the origin on the XY plane, then extrude it 40mm."
@@ -172,7 +247,7 @@ catia-v5-mcp-server/
 ### How it works
 
 ```
-Claude (Desktop/Code)
+AI agent (Claude, Cursor, Windsurf, Cline, ...)
     │
     │ stdio (MCP JSON-RPC)
     ▼
@@ -187,10 +262,10 @@ catia_mcp/tools/*.py (Tool modules)
 CATIA V5 Application
 ```
 
-1. Claude sends MCP tool calls over stdio
+1. The MCP client sends tool calls over stdio
 2. The server routes each call to the appropriate tool module
 3. Each tool module uses `win32com.client` to drive CATIA V5 via COM
-4. Results (JSON, text) are returned to Claude
+4. Results (JSON, text) are returned to the agent
 
 ## Tool Reference
 
