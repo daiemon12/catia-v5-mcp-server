@@ -460,6 +460,19 @@ class PartDesignTools:
         self.conn.refresh_display()
         return f"Pad created: {height} mm ({direction}). Feature: '{pad.Name}'"
 
+    def _body_volume_mm3(self, part: Any, body: Any) -> float | None:
+        """Measure the body's solid volume in mm3, or None if unavailable."""
+        try:
+            doc = part.Parent
+            try:
+                spa = doc.GetWorkbench("SPAWorkbench")
+            except AttributeError:
+                spa = self.conn.app.GetWorkbench("SPAWorkbench")
+            ref = part.CreateReferenceFromObject(body)
+            return spa.GetMeasurable(ref).Volume * 1e9  # m3 -> mm3
+        except Exception:
+            return None
+
     def _pocket(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
@@ -468,15 +481,44 @@ class PartDesignTools:
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
         depth = args["depth"]
+        reverse = args.get("direction") == "reverse"
+
+        before = self._body_volume_mm3(part, body)
 
         pocket = sf.AddNewPocket(sketch, depth)
-
-        if args.get("direction") == "reverse":
-            pocket.DirectionOrientation = 1
-
+        # A pocket cuts on one side of the profile's support plane only, so
+        # the orientation is set explicitly in both cases (field-verified:
+        # the wrong side produces a tree feature that removes nothing).
+        pocket.DirectionOrientation = 1 if reverse else 0
         part.UpdateObject(pocket)
+
+        after = self._body_volume_mm3(part, body)
+        if before is not None and after is not None and after >= before:
+            # No material removed: the cut landed on the empty side. Flip
+            # and re-verify instead of reporting a false success.
+            pocket.DirectionOrientation = 0 if reverse else 1
+            part.UpdateObject(pocket)
+            after = self._body_volume_mm3(part, body)
+
         self.conn.refresh_display()
-        return f"Pocket created: {depth} mm deep. Feature: '{pocket.Name}'"
+
+        if before is not None and after is not None:
+            removed = before - after
+            if removed <= 0:
+                return (
+                    f"FEATURE_NO_EFFECT: pocket '{pocket.Name}' was created in "
+                    f"the tree but removed no material in either direction "
+                    f"(volume stayed {before:.1f} mm3). Check that the profile "
+                    "intersects the solid."
+                )
+            return (
+                f"Pocket '{pocket.Name}' created: {depth} mm deep. Removed "
+                f"{removed:.1f} mm3 ({before:.1f} -> {after:.1f})."
+            )
+        return (
+            f"Pocket created: {depth} mm deep. Feature: '{pocket.Name}' "
+            "(volume verification unavailable on this installation)."
+        )
 
     def _shaft(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()

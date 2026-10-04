@@ -16,6 +16,25 @@ All notable changes to this project are documented here.
   reports).
 
 ### Fixed
+- **`catia_sketch_constraint` never worked**: it passed raw geometry elements
+  where the API requires Reference objects (DISP_E_TYPEMISMATCH on every
+  call), and most CatConstraintType enum codes were wrong (only tangent was
+  correct). Both fixed; constraint names are now returned for verification.
+  Root-caused and validated on live CATIA by a V5R20 field test campaign.
+- **`catia_sketch_arc` called a method that does not exist**: Factory2D has
+  no CreateArc in any V5 release. Arcs are now created as open circles via
+  CreateCircle with start/end parameters (field-validated fix).
+- **`catia_pocket` could report success while removing no material**: the cut
+  side was never established. Orientation is now set explicitly, the body
+  volume is measured before/after, the direction is flipped automatically
+  when nothing was removed, and the result message states the measured
+  effect (or FEATURE_NO_EFFECT honestly). Field-validated: 10x10x5 pocket
+  removes exactly 500 mm3.
+- **`catia_close_sketch` lost track of open sketches across server
+  restarts**: it now re-adopts the document's in-work sketch instead of
+  failing while CATIA visibly holds a sketch open.
+- `catia_measure_distance` documents its real element contract (tree-named
+  features/sketches only; faces and edges not yet addressable).
 - Missing COM APIs now return a clear `UNSUPPORTED_CAPABILITY` message
   naming the likely causes instead of a raw AttributeError. Field testing
   on V5R20 identified a stale pywin32 `gen_py` cache as the most common

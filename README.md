@@ -45,6 +45,11 @@ This MCP server exposes **79 tools** that let Claude:
   matrix.
 - **V5-6 2020**: full tool surface in active use by contributors.
 
+Known limitation (all releases): `catia_measure_distance` resolves tree-named
+objects only (`Pad.1`, `Sketch.2`); faces and edges are not yet addressable
+through the selection search. Contributions welcome on a topology reference
+resolver.
+
 Reports from other releases are welcome, open an issue with your CATIA version
 and the tool results (the `catia_diagnose` tool output is the ideal payload).
 

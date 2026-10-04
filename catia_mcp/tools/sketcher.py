@@ -305,6 +305,17 @@ class SketcherTools:
         return f"Sketch created on {plane_names.get(plane_key, plane)} plane. Ready for geometry."
 
     def _close_sketch(self) -> str:
+        if self._active_sketch is None:
+            # The cached handle does not survive a server restart while CATIA
+            # keeps the sketch open in edition. Re-adopt the document's
+            # in-work object when it looks like a sketch instead of failing.
+            try:
+                part = self.conn.get_active_part()
+                candidate = part.InWorkObject
+                getattr(candidate, "CloseEdition")
+                self._active_sketch = candidate
+            except Exception:
+                pass
         self._ensure_sketch_open()
         sketch = self._active_sketch
         sketch.CloseEdition()
@@ -354,10 +365,12 @@ class SketcherTools:
         self._ensure_sketch_open()
         factory = self._active_factory
         import math
-        # CATIA CreateArc expects angles in radians
+        # Factory2D has no CreateArc in CATIA V5 (field-verified against the
+        # R20 API reference). An arc is an open circle: CreateCircle takes
+        # optional start/end parameters in radians that leave it open.
         start_rad = math.radians(start_angle)
         end_rad = math.radians(end_angle)
-        factory.CreateArc(cx, cy, radius, start_rad, end_rad)
+        factory.CreateCircle(cx, cy, radius, start_rad, end_rad)
         return (
             f"Arc created at ({cx}, {cy}), radius={radius} mm, "
             f"from {start_angle}° to {end_angle}°"
@@ -392,6 +405,23 @@ class SketcherTools:
         factory.CreatePoint(x, y)
         return f"Point created at ({x}, {y}) mm"
 
+    # CatConstraintType values from the R20 automation reference
+    # (MecModInterfaces, enum CatConstraintType): Reference=0, Distance=1,
+    # On=2, Concentricity=3, Tangency=4, Length=5, Angle=6, PlanarAngle=7,
+    # Parallelism=8, AxisParallelism=9, Horizontality=10, Perpendicularity=11,
+    # AxisPerpendicularity=12, Verticality=13, Radius=14, Symmetry=15.
+    _CST_REFERENCE = 0
+    _CST_DISTANCE = 1
+    _CST_ON = 2
+    _CST_TANGENCY = 4
+    _CST_LENGTH = 5
+    _CST_ANGLE = 6
+    _CST_PARALLELISM = 8
+    _CST_HORIZONTALITY = 10
+    _CST_PERPENDICULARITY = 11
+    _CST_VERTICALITY = 13
+    _CST_RADIUS = 14
+
     def _add_constraint(self, args: dict[str, Any]) -> str:
         self._ensure_sketch_open()
         sketch = self._active_sketch
@@ -402,6 +432,12 @@ class SketcherTools:
 
         constraints = sketch.Constraints
         geom = sketch.GeometricElements
+        part = self.conn.get_active_part()
+
+        # AddMonoEltCst/AddBiEltCst take Reference arguments; passing raw
+        # geometry elements raises DISP_E_TYPEMISMATCH (field-verified).
+        def _ref(index: int) -> Any:
+            return part.CreateReferenceFromObject(geom.Item(index))
 
         # Dimensional constraints (need a geometry reference + value)
         if constraint_type in ("distance", "radius", "angle"):
@@ -410,36 +446,31 @@ class SketcherTools:
             if idx1 is None:
                 raise ValueError(f"Constraint type '{constraint_type}' requires 'geometry_index_1'.")
 
-            ref1 = geom.Item(idx1)
-
             if constraint_type == "distance" and idx2 is not None:
-                ref2 = geom.Item(idx2)
-                cst = constraints.AddBiEltCst(0, ref1, ref2)  # catCstTypeDistance = 0
-                cst.Dimension.Value = value
+                cst = constraints.AddBiEltCst(self._CST_DISTANCE, _ref(idx1), _ref(idx2))
             elif constraint_type == "distance":
-                cst = constraints.AddMonoEltCst(0, ref1)  # Length constraint
-                cst.Dimension.Value = value
+                # A single-element distance is a length dimension in CATIA.
+                cst = constraints.AddMonoEltCst(self._CST_LENGTH, _ref(idx1))
             elif constraint_type == "radius":
-                cst = constraints.AddMonoEltCst(1, ref1)  # catCstTypeRadius = 1
-                cst.Dimension.Value = value
-            elif constraint_type == "angle":
+                cst = constraints.AddMonoEltCst(self._CST_RADIUS, _ref(idx1))
+            else:  # angle
                 if idx2 is None:
                     raise ValueError("Angle constraint requires 'geometry_index_2'.")
-                ref2 = geom.Item(idx2)
-                cst = constraints.AddBiEltCst(2, ref1, ref2)  # catCstTypeAngle = 2
-                cst.Dimension.Value = value
+                cst = constraints.AddBiEltCst(self._CST_ANGLE, _ref(idx1), _ref(idx2))
+            cst.Dimension.Value = value
 
-            return f"{constraint_type.capitalize()} constraint added: {value} {'mm' if constraint_type != 'angle' else '°'}"
+            unit = "deg" if constraint_type == "angle" else "mm"
+            return f"{constraint_type.capitalize()} constraint '{cst.Name}' added: {value} {unit}"
 
         # Geometric constraints (no value needed)
         cst_type_map = {
-            "coincidence": 3,   # catCstTypeOn
-            "tangent": 4,       # catCstTypeTangent
-            "perpendicular": 6, # catCstTypePerpendicular
-            "parallel": 7,      # catCstTypeParallel
-            "horizontal": 8,    # catCstTypeHorizontality
-            "vertical": 9,      # catCstTypeVerticality
-            "fix": 10,          # catCstTypeFix
+            "coincidence": self._CST_ON,
+            "tangent": self._CST_TANGENCY,
+            "perpendicular": self._CST_PERPENDICULARITY,
+            "parallel": self._CST_PARALLELISM,
+            "horizontal": self._CST_HORIZONTALITY,
+            "vertical": self._CST_VERTICALITY,
+            "fix": self._CST_REFERENCE,
         }
 
         cst_code = cst_type_map.get(constraint_type)
@@ -449,18 +480,15 @@ class SketcherTools:
         if constraint_type in ("horizontal", "vertical", "fix"):
             if idx1 is None:
                 raise ValueError(f"Constraint '{constraint_type}' requires 'geometry_index_1'.")
-            ref1 = geom.Item(idx1)
-            constraints.AddMonoEltCst(cst_code, ref1)
+            cst = constraints.AddMonoEltCst(cst_code, _ref(idx1))
         else:
             if idx1 is None or idx2 is None:
                 raise ValueError(
                     f"Constraint '{constraint_type}' requires both 'geometry_index_1' and 'geometry_index_2'."
                 )
-            ref1 = geom.Item(idx1)
-            ref2 = geom.Item(idx2)
-            constraints.AddBiEltCst(cst_code, ref1, ref2)
+            cst = constraints.AddBiEltCst(cst_code, _ref(idx1), _ref(idx2))
 
-        return f"{constraint_type.capitalize()} constraint added"
+        return f"{constraint_type.capitalize()} constraint '{cst.Name}' added"
 
     def _get_geometry(self) -> str:
         self._ensure_sketch_open()

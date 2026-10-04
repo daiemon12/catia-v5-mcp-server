@@ -32,7 +32,10 @@ class MeasurementTools:
                 "name": "catia_measure_distance",
                 "description": (
                     "Measure the minimum distance between two geometry elements. "
-                    "Returns distance in mm."
+                    "Returns distance in mm. Elements are resolved by tree name "
+                    "(features, sketches, e.g. 'Pad.1', 'Sketch.2'); faces and "
+                    "edges are NOT yet addressable (known limitation), do not "
+                    "pass 'Face.1' or outputs of catia_list_edges."
                 ),
                 "inputSchema": {
                     "type": "object",

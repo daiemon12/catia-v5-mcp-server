@@ -134,14 +134,16 @@ class CATIAMCPServer:
                 # workbench license that is not active.
                 error_msg = (
                     f"UNSUPPORTED_CAPABILITY in {name}: the required CATIA "
-                    f"automation API did not resolve ({e}). Most common "
-                    "cause: a stale pywin32 COM cache; close CATIA and the "
+                    f"automation API did not resolve ({e}). Two distinct "
+                    "causes exist: (1) the method is absent from this CATIA "
+                    "release's automation API entirely, in which case "
+                    "clearing caches will not help; (2) a stale pywin32 COM "
+                    "cache is blocking resolution: close CATIA and the "
                     "server, delete the %TEMP%\\gen_py folder, restart and "
-                    "retry once. Otherwise this CATIA release may lack the "
-                    "API, or the workbench license is not active (check "
-                    "Tools > Options > Licensing; floating licenses come "
-                    "and go). Run catia_diagnose for a full report of what "
-                    "this installation exposes."
+                    "retry once. A missing workbench license can also lock "
+                    "methods (floating licenses come and go). Run "
+                    "catia_diagnose for a full report of what this "
+                    "installation exposes."
                 )
                 logger.error(error_msg, exc_info=True)
                 return [TextContent(type="text", text=error_msg)]
