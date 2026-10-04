@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **82 tools** that let an AI agent:
+This MCP server exposes **84 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -24,7 +24,7 @@ This MCP server exposes **82 tools** that let an AI agent:
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
-- **Drafting** — create Drawing documents and generative views from parts (experimental, field-contributed)
+- **Drafting** — create Drawing documents, generative views and associative dimensions (experimental, field-contributed)
 - **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
 
 ## Requirements
@@ -238,7 +238,7 @@ catia-v5-mcp-server/
 │       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
-│       ├── drawing.py       # Drafting: drawings & generative views (2 tools)
+│       ├── drawing.py       # Drafting: drawings, views & dimensions (4 tools)
 │       ├── diagnostics.py   # Installation diagnostics (1 tool)
 │       └── export.py        # Export & view control (4 tools)
 ├── pyproject.toml
@@ -378,11 +378,13 @@ CATIA V5 Application
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
 
-### Drafting Tools (2) — experimental
+### Drafting Tools (4) — experimental
 | Tool | Description |
 |------|-------------|
 | `catia_new_drawing` | Create a Drawing document (CATDrawing) |
 | `catia_drawing_add_view` | Add a generative front view of a part on the active sheet (xy/yz/zx projection) |
+| `catia_drawing_list_view_geometry` | List a view's 2D geometry as indexed elements for dimensioning |
+| `catia_drawing_add_dimension` | Add an associative dimension (distance/length/angle/radius/diameter) between indexed elements |
 
 ### Diagnostics (1)
 | Tool | Description |

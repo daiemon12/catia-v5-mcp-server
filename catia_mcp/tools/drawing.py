@@ -5,9 +5,10 @@ community tester ESE3X: Drawing document creation, generative view
 creation (Sheets / Views.Add / GenerativeBehavior / DefineFrontView /
 Update) and view positioning are confirmed working through COM.
 
-The module is intentionally minimal while the full drafting field
-campaign is in progress; projection/section views, dimensions and title
-blocks are planned follow-ups.
+The dimensioning tools follow the MCP philosophy: the AI agent decides
+where dimensions belong (list the view's 2D geometry, pick elements),
+the server only executes the mechanical Add. Projection/section views
+and title blocks are planned follow-ups.
 """
 
 from __future__ import annotations
@@ -44,6 +45,62 @@ class DraftingTools:
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
+                },
+            },
+            {
+                "name": "catia_drawing_list_view_geometry",
+                "description": (
+                    "List the 2D geometry of a drawing view (generated "
+                    "projections included) as indexed elements. The agent "
+                    "picks elements from this list to place dimensions with "
+                    "catia_drawing_add_dimension. Defaults to the last view "
+                    "of the active sheet."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "view_name": {
+                            "type": "string",
+                            "description": "View to inspect (default: last view of the active sheet)",
+                        },
+                    },
+                },
+            },
+            {
+                "name": "catia_drawing_add_dimension",
+                "description": (
+                    "Add a dimension to a drawing view between one or two "
+                    "indexed 2D elements from "
+                    "catia_drawing_list_view_geometry. The dimension value "
+                    "is associative (computed by CATIA from the geometry). "
+                    "Experimental: CatDimType codes follow the R20 "
+                    "reference and await live validation."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["distance", "length", "angle", "radius", "diameter"],
+                            "description": (
+                                "Dimension type. 'length'/'radius'/'diameter' "
+                                "take one element; 'distance'/'angle' take two."
+                            ),
+                        },
+                        "element_index_1": {
+                            "type": "integer",
+                            "description": "First element index from catia_drawing_list_view_geometry",
+                        },
+                        "element_index_2": {
+                            "type": "integer",
+                            "description": "Second element index (distance/angle)",
+                        },
+                        "view_name": {
+                            "type": "string",
+                            "description": "Target view (default: last view of the active sheet)",
+                        },
+                    },
+                    "required": ["type", "element_index_1"],
                 },
             },
             {
@@ -95,6 +152,10 @@ class DraftingTools:
                 return self._new_drawing()
             case "catia_drawing_add_view":
                 return self._add_view(arguments)
+            case "catia_drawing_list_view_geometry":
+                return self._list_view_geometry(arguments)
+            case "catia_drawing_add_dimension":
+                return self._add_dimension(arguments)
             case _:
                 raise ValueError(f"Unknown drafting tool: {tool_name}")
 
@@ -183,4 +244,91 @@ class DraftingTools:
         return (
             f"View '{view.Name}' of '{part_doc.Name}' added to sheet "
             f"'{sheet.Name}' ({plane.upper()} projection) and updated."
+        )
+
+    # CatDimType codes from the R20 automation reference (live validation
+    # pending): auto=0, distance=1, length=2, angle=3, radius=4, diameter=5.
+    _DIM_TYPES = {
+        "distance": 1,
+        "length": 2,
+        "angle": 3,
+        "radius": 4,
+        "diameter": 5,
+    }
+
+    def _find_view(self, view_name: str | None) -> Any:
+        drawing = self._find_active_drawing()
+        views = drawing.Sheets.ActiveSheet.Views
+        if view_name:
+            for i in range(1, views.Count + 1):
+                v = views.Item(i)
+                if str(v.Name) == view_name:
+                    return v
+            names = ", ".join(str(views.Item(i).Name) for i in range(1, views.Count + 1))
+            raise RuntimeError(f"No view named '{view_name}'. Views: {names}.")
+        if views.Count < 3:
+            raise RuntimeError(
+                "The active sheet has no user view yet (only Main/Background). "
+                "Add one with catia_drawing_add_view."
+            )
+        # Items 1 and 2 are the sheet's Main and Background views; the last
+        # item is the most recently added user view.
+        return views.Item(views.Count)
+
+    def _list_view_geometry(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        view = self._find_view(args.get("view_name"))
+        geoms = view.GeometricElements
+        elements = []
+        for i in range(1, geoms.Count + 1):
+            try:
+                name = str(geoms.Item(i).Name)
+            except Exception:
+                name = "<unnamed>"
+            elements.append({"index": i, "name": name})
+        if not elements:
+            return (
+                f"View '{view.Name}' exposes no 2D geometry. For a "
+                "generative view, make sure it was updated "
+                "(catia_drawing_add_view updates automatically)."
+            )
+        import json as _json
+
+        return _json.dumps(
+            {"view": str(view.Name), "elements": elements}, indent=2
+        )
+
+    def _add_dimension(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        dim_type = args["type"]
+        code = self._DIM_TYPES.get(dim_type)
+        if code is None:
+            raise ValueError(
+                f"Unknown dimension type '{dim_type}'. Use one of: "
+                + ", ".join(self._DIM_TYPES)
+            )
+        view = self._find_view(args.get("view_name"))
+        geoms = view.GeometricElements
+
+        idx1 = args["element_index_1"]
+        idx2 = args.get("element_index_2")
+        two_element_types = ("distance", "angle")
+        if dim_type in two_element_types and idx2 is None:
+            raise ValueError(f"'{dim_type}' needs element_index_2 as well.")
+
+        elems = [geoms.Item(idx1)]
+        if idx2 is not None:
+            elems.append(geoms.Item(idx2))
+
+        # DrawingDimensions.Add(iTypeDim, iGeomElem, iPtCoordElem, iLineRep).
+        # Input safearrays marshal fine through late-bound COM (only in/out
+        # arrays do not). Selection points zeroed: CATIA anchors on the
+        # geometry; placement can be adjusted interactively.
+        pt_coords = [0.0] * (2 * len(elems))
+        dim = view.Dimensions.Add(code, elems, pt_coords, 0)
+
+        self.conn.refresh_display()
+        return (
+            f"{dim_type.capitalize()} dimension '{dim.Name}' added on view "
+            f"'{view.Name}' (associative value computed by CATIA)."
         )

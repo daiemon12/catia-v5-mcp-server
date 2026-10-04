@@ -5,11 +5,16 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
-- **Drafting module (experimental, 82 tools total)**: `catia_new_drawing`
+- **Drafting module (experimental, 84 tools total)**: `catia_new_drawing`
   creates a CATDrawing and `catia_drawing_add_view` projects an open Part
-  as a generative front view (xy/yz/zx) on the active sheet. Built from
+  as a generative front view (xy/yz/zx) on the active sheet, built from
   automation probes field-validated on CATIA V5R20 by community tester
-  ESE3X; projection/section views, dimensions and title blocks are
+  ESE3X. Dimensioning follows the MCP philosophy (the agent decides where
+  dimensions belong): `catia_drawing_list_view_geometry` exposes a view's
+  projected 2D geometry as indexed elements and
+  `catia_drawing_add_dimension` places associative dimensions
+  (distance/length/angle/radius/diameter) between them via
+  DrawingDimensions.Add. Projection/section views and title blocks are
   planned follow-ups.
 - README repositioned as agent-agnostic: per-client MCP setup for Claude
   Desktop/Code, Cursor, Windsurf, Cline, VS Code and generic stdio hosts,
