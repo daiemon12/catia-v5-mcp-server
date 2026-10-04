@@ -3,6 +3,8 @@
 > "It's less like calling a normal API and more like talking to a very
 > opinionated CAD engineer who happens to speak COM."
 >
+> ESE3X, V5R20 field tester
+>
 > Keep this in mind: the CATIA V5 automation API returns meters without
 > saying so, demands Reference objects in some places and not others,
 > will not fill the arrays you hand it, and rejects parallel directions.
