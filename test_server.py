@@ -14,6 +14,7 @@ def test_imports():
     print("Testing imports...")
     from catia_mcp.connection import CATIAConnection
     from catia_mcp.tools.document import DocumentTools
+    from catia_mcp.tools.drawing import DraftingTools
     from catia_mcp.tools.sketcher import SketcherTools
     from catia_mcp.tools.part_design import PartDesignTools
     from catia_mcp.tools.diagnostics import DiagnosticsTools
@@ -29,6 +30,7 @@ def test_tool_definitions():
     print("Testing tool definitions...")
     from catia_mcp.connection import CATIAConnection
     from catia_mcp.tools.document import DocumentTools
+    from catia_mcp.tools.drawing import DraftingTools
     from catia_mcp.tools.sketcher import SketcherTools
     from catia_mcp.tools.part_design import PartDesignTools
     from catia_mcp.tools.diagnostics import DiagnosticsTools
@@ -40,6 +42,7 @@ def test_tool_definitions():
     conn = CATIAConnection()
     modules = {
         "Document": DocumentTools(conn),
+        "Drafting": DraftingTools(conn),
         "Sketcher": SketcherTools(conn),
         "Part Design": PartDesignTools(conn),
         "GSD": GSDTools(conn),

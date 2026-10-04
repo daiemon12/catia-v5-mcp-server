@@ -1,6 +1,7 @@
 """CATIA V5 MCP Tools - CAD automation tools exposed via MCP."""
 
 from catia_mcp.tools.document import DocumentTools
+from catia_mcp.tools.drawing import DraftingTools
 from catia_mcp.tools.sketcher import SketcherTools
 from catia_mcp.tools.part_design import PartDesignTools
 from catia_mcp.tools.diagnostics import DiagnosticsTools
@@ -11,6 +12,7 @@ from catia_mcp.tools.export import ExportTools
 
 __all__ = [
     "DocumentTools",
+    "DraftingTools",
     "SketcherTools",
     "PartDesignTools",
     "GSDTools",

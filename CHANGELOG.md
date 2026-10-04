@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- **Drafting module (experimental, 82 tools total)**: `catia_new_drawing`
+  creates a CATDrawing and `catia_drawing_add_view` projects an open Part
+  as a generative front view (xy/yz/zx) on the active sheet. Built from
+  automation probes field-validated on CATIA V5R20 by community tester
+  ESE3X; projection/section views, dimensions and title blocks are
+  planned follow-ups.
+- README repositioned as agent-agnostic: per-client MCP setup for Claude
+  Desktop/Code, Cursor, Windsurf, Cline, VS Code and generic stdio hosts,
+  plus release/CI/license badges.
+
 ## [0.2.2] — 2026-10-04
 
 ### Added
