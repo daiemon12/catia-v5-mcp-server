@@ -1,5 +1,13 @@
 # Contributing
 
+> "It's less like calling a normal API and more like talking to a very
+> opinionated CAD engineer who happens to speak COM."
+>
+> Keep this in mind: the CATIA V5 automation API returns meters without
+> saying so, demands Reference objects in some places and not others,
+> will not fill the arrays you hand it, and rejects parallel directions.
+> Every tool in this repo that touches COM was validated the hard way.
+
 Thanks for your interest in improving the CATIA V5 MCP Server! Contributions
 are very welcome — bug reports, fixes, new tools, documentation. Issues and
 PRs may be written in English or Chinese (欢迎使用中文).
