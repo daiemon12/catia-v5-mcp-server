@@ -216,6 +216,20 @@ class PartDesignTools:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
+                        "dir1_edge": {
+                            "type": "string",
+                            "description": (
+                                "Edge giving direction 1 ('Edge.N' from "
+                                "catia_list_edges). Pass with dir2_edge, two "
+                                "ADJACENT edges sharing a corner (CATIA "
+                                "rejects parallel directions). Omit both to "
+                                "let CATIA pick defaults."
+                            ),
+                        },
+                        "dir2_edge": {
+                            "type": "string",
+                            "description": "Edge giving direction 2 ('Edge.N', adjacent to dir1_edge)",
+                        },
                         "dir1_count": {
                             "type": "integer",
                             "description": "Number of instances in first direction",
@@ -739,16 +753,31 @@ class PartDesignTools:
         d2_count = args.get("dir2_count", 1)
         d2_spacing = args.get("dir2_spacing", 0)
 
-        # AddNewRectPattern takes 12 parameters; empty-name references let
-        # CATIA pick the default directions (recorded-macro pattern).
-        ref1 = part.CreateReferenceFromName("")
-        ref2 = part.CreateReferenceFromName("")
+        # AddNewRectPattern takes 12 parameters. Field-proven on V5R20:
+        # topology edge references (Selection.Item(i).Reference) are accepted
+        # as direction references, and CATIA rejects two PARALLEL directions,
+        # so pass two ADJACENT edges (sharing a corner). Without explicit
+        # edges, empty-name references let CATIA pick default directions.
+        dir1_edge = args.get("dir1_edge")
+        dir2_edge = args.get("dir2_edge")
+        if bool(dir1_edge) != bool(dir2_edge):
+            raise ValueError(
+                "Pass both 'dir1_edge' and 'dir2_edge' ('Edge.N' from "
+                "catia_list_edges, two adjacent edges sharing a corner), "
+                "or neither."
+            )
+        if dir1_edge:
+            ref1 = self._topo_reference("Edge", self._topo_index(dir1_edge, "Edge"))
+            ref2 = self._topo_reference("Edge", self._topo_index(dir2_edge, "Edge"))
+        else:
+            ref1 = part.CreateReferenceFromName("")
+            ref2 = part.CreateReferenceFromName("")
         pattern = sf.AddNewRectPattern(
             feature,
             d1_count, d2_count,
             d1_spacing, d2_spacing,
             1, 1,          # position of the original along dir1/dir2
-            ref1, ref2,    # direction references (defaults)
+            ref1, ref2,    # direction references
             False, False,  # reversed dir1/dir2
             0.0,           # rotation angle
         )

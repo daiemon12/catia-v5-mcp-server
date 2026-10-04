@@ -5,6 +5,11 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- `catia_rect_pattern` accepts optional `dir1_edge`/`dir2_edge` ('Edge.N')
+  to pin the pattern directions on real topology edges. Field-proven on
+  V5R20: edge references from the selection are accepted as directions,
+  and CATIA rejects two parallel directions, so two adjacent edges
+  sharing a corner are required.
 - **Drafting module (experimental, 84 tools total)**: `catia_new_drawing`
   creates a CATDrawing and `catia_drawing_add_view` projects an open Part
   as a generative front view (xy/yz/zx) on the active sheet, built from
