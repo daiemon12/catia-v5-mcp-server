@@ -1,6 +1,6 @@
 # CATIA V5 MCP Server
 
-> Connect AI agents to Dassault Systemes CATIA V5 via the Model Context Protocol (MCP) — works with Claude, Cursor, Windsurf, Cline, VS Code and any MCP-compatible client.
+> Connect AI agents to Dassault Systemes CATIA V5 via the Model Context Protocol (MCP) — works with Claude, Cursor, Windsurf, Cline, VS Code, Codex and any MCP-compatible client.
 
 [![Release](https://img.shields.io/github/v/release/daiemon12/catia-v5-mcp-server)](https://github.com/daiemon12/catia-v5-mcp-server/releases)
 [![CI](https://github.com/daiemon12/catia-v5-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/daiemon12/catia-v5-mcp-server/actions/workflows/ci.yml)
@@ -32,7 +32,7 @@ This MCP server exposes **84 tools** that let an AI agent:
 - **Windows** (COM automation is Windows-only)
 - **CATIA V5** installed and licensed (R2016+)
 - **Python 3.10+**
-- Any **MCP client**: Claude Desktop, Claude Code, Cursor, Windsurf, Cline, VS Code (Copilot/MCP), and others
+- Any **MCP client**: Claude Desktop, Claude Code, Cursor, Windsurf, Cline, VS Code (Copilot/MCP), Codex CLI, ChatGPT via an HTTP bridge, and others
 
 ### Compatibility notes (field reports)
 
@@ -186,6 +186,28 @@ Add to `.vscode/mcp.json`:
   }
 }
 ```
+</details>
+
+<details>
+<summary><b>Codex CLI (OpenAI)</b></summary>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.catia-v5]
+command = "python"
+args = ["-m", "catia_mcp"]
+```
+</details>
+
+<details>
+<summary><b>ChatGPT (desktop / web)</b></summary>
+
+ChatGPT only connects to remote MCP servers over HTTP, not to local
+stdio processes. Expose this server through a stdio-to-HTTP bridge such
+as `mcp-proxy` or `supergateway` on the CATIA machine, then add the
+resulting URL as a connector in ChatGPT's developer mode. A native HTTP
+transport is on the roadmap.
 </details>
 
 <details>
