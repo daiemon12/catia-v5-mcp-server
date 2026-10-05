@@ -265,6 +265,16 @@ class PartDesignTools:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
+                        "axis": {
+                            "type": "string",
+                            "enum": ["x", "y", "z"],
+                            "description": "Rotation axis direction (default z)",
+                        },
+                        "center": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "description": "Point [x, y, z] in mm the rotation axis passes through (default origin)",
+                        },
                         "count": {
                             "type": "integer",
                             "description": "Number of instances around the circle",
@@ -272,6 +282,35 @@ class PartDesignTools:
                         "angular_spacing": {
                             "type": "number",
                             "description": "Angular spacing in degrees (default: equal spacing = 360/count)",
+                        },
+                        "feature_name": {
+                            "type": "string",
+                            "description": "Feature to pattern. Defaults to last feature.",
+                        },
+                    },
+                    "required": ["count"],
+                },
+            },
+            {
+                "name": "catia_user_pattern",
+                "description": (
+                    "Create a User Pattern: copies of a feature placed on the "
+                    "points of a sketch (the most flexible pattern, e.g. "
+                    "arbitrary bolt layouts). Draw the points with "
+                    "catia_sketch_point in a dedicated sketch and close it; "
+                    "pass its name from catia_close_sketch. Points must not "
+                    "coincide with the seed feature's position."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "count": {
+                            "type": "integer",
+                            "description": "Number of instances (number of locating points)",
+                        },
+                        "sketch_name": {
+                            "type": "string",
+                            "description": "Name of the points sketch (e.g. 'Sketch.3'); defaults to the last sketch",
                         },
                         "feature_name": {
                             "type": "string",
@@ -424,6 +463,8 @@ class PartDesignTools:
                 return self._hole(arguments)
             case "catia_rect_pattern":
                 return self._rect_pattern(arguments)
+            case "catia_user_pattern":
+                return self._user_pattern(arguments)
             case "catia_circ_pattern":
                 return self._circ_pattern(arguments)
             case "catia_mirror":
@@ -769,9 +810,17 @@ class PartDesignTools:
         if dir1_edge:
             ref1 = self._topo_reference("Edge", self._topo_index(dir1_edge, "Edge"))
             ref2 = self._topo_reference("Edge", self._topo_index(dir2_edge, "Edge"))
+            directions = f"{dir1_edge} -> dir1, {dir2_edge} -> dir2"
         else:
-            ref1 = part.CreateReferenceFromName("")
-            ref2 = part.CreateReferenceFromName("")
+            # Field-proven default on V5R20 (measured 2x2 boss grid): the
+            # origin planes give deterministic directions, PlaneYZ -> X
+            # and PlaneZX -> Y, through CreateReferenceFromObject.
+            planes = self.conn.get_origin_elements()
+            ref1 = part.CreateReferenceFromObject(planes["yz"])
+            ref2 = part.CreateReferenceFromObject(planes["zx"])
+            directions = "origin PlaneYZ -> dir1 (X), PlaneZX -> dir2 (Y)"
+
+        before = self._body_volume_mm3(part, body)
         pattern = sf.AddNewRectPattern(
             feature,
             d1_count, d2_count,
@@ -784,10 +833,58 @@ class PartDesignTools:
 
         part.UpdateObject(pattern)
         self.conn.refresh_display()
+        after = self._body_volume_mm3(part, body)
+        effect = ""
+        if before is not None and after is not None:
+            effect = f" Volume {before:.1f} -> {after:.1f} mm3."
         return (
-            f"Rectangular pattern created: {d1_count}x{d2_count}, "
-            f"spacing {d1_spacing}x{d2_spacing} mm. Feature: '{pattern.Name}'"
+            f"Rectangular pattern '{pattern.Name}' created: {d1_count}x{d2_count}, "
+            f"spacing {d1_spacing}x{d2_spacing} mm, directions: {directions}."
+            + effect
         )
+
+    def _mint_axis_reference(self, axis: str, center: list[float]) -> Any:
+        """Build a rotation-axis Reference from a GSD line in a throwaway
+        donor document.
+
+        Field-proven on V5R20: AddNewCircPattern fails with 0x80020009 when
+        the patterned document itself contains GSD geometry, but a Reference
+        minted from a line in a separate document is accepted and survives
+        closing that document.
+        """
+        app = self.conn.app
+        target_doc = app.ActiveDocument
+        try:
+            app.DisplayFileAlerts = False
+        except Exception:
+            pass
+        donor_doc = app.Documents.Add("Part")
+        try:
+            donor = donor_doc.Part
+            hsf = donor.HybridShapeFactory
+            geoset = donor.HybridBodies.Add()
+            dx, dy, dz = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1)}[axis]
+            cx, cy, cz = center
+            p1 = hsf.AddNewPointCoord(cx - 50 * dx, cy - 50 * dy, cz - 50 * dz)
+            geoset.AppendHybridShape(p1)
+            p2 = hsf.AddNewPointCoord(cx + 50 * dx, cy + 50 * dy, cz + 50 * dz)
+            geoset.AppendHybridShape(p2)
+            line = hsf.AddNewLinePtPt(
+                donor.CreateReferenceFromObject(p1),
+                donor.CreateReferenceFromObject(p2),
+            )
+            geoset.AppendHybridShape(line)
+            donor.Update()
+            return donor.CreateReferenceFromObject(line)
+        finally:
+            try:
+                donor_doc.Close()
+            except Exception:
+                pass
+            try:
+                target_doc.Activate()
+            except Exception:
+                pass
 
     def _circ_pattern(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -798,27 +895,80 @@ class PartDesignTools:
         feature = self._get_last_shape(args.get("feature_name"))
         count = args["count"]
         angular_spacing = args.get("angular_spacing", 360.0 / count)
+        axis = (args.get("axis") or "z").lower()
+        if axis not in ("x", "y", "z"):
+            raise ValueError("axis must be 'x', 'y' or 'z'")
+        center = args.get("center") or [0.0, 0.0, 0.0]
+        if len(center) != 3:
+            raise ValueError("center must be [x, y, z] in mm")
 
+        axis_ref = self._mint_axis_reference(axis, center)
+        # Re-resolve after the donor round trip: the active document changed
+        # and came back.
+        part = self.conn.get_active_part()
+        body = self.conn.get_active_part_body()
+        sf = part.ShapeFactory
+        feature = self._get_last_shape(args.get("feature_name"))
+        center_ref = part.CreateReferenceFromName("")
+
+        before = self._body_volume_mm3(part, body)
         # AddNewCircPattern takes 12 parameters; instances around the axis
-        # belong in the ANGULAR slot (3rd), radial count stays 1.
-        refc = part.CreateReferenceFromName("")
-        refa = part.CreateReferenceFromName("")
+        # belong in the ANGULAR slot (3rd). Flags as field-validated
+        # (4 bosses at radius 40, angles 0/90/180/270 on V5R20).
         pattern = sf.AddNewCircPattern(
             feature,
             1, count,              # radial copies, angular copies
             0.0, angular_spacing,  # radial step, angular step (deg)
             1, 1,                  # position of the original
-            refc, refa,            # rotation center / axis (defaults)
-            True,                  # reversed rotation axis
+            center_ref, axis_ref,  # rotation center (from axis line), axis
+            False,                 # reversed rotation axis
             0.0,                   # rotation angle
-            True,                  # radius aligned
+            False,                 # radius aligned
         )
 
         part.UpdateObject(pattern)
         self.conn.refresh_display()
+        after = self._body_volume_mm3(part, body)
+        effect = ""
+        if before is not None and after is not None:
+            effect = f" Volume {before:.1f} -> {after:.1f} mm3."
         return (
-            f"Circular pattern created: {count} instances, "
-            f"{angular_spacing}° spacing. Feature: '{pattern.Name}'"
+            f"Circular pattern '{pattern.Name}' created: {count} instances, "
+            f"{angular_spacing} deg spacing around the {axis.upper()} axis "
+            f"through {center}." + effect
+        )
+
+    def _user_pattern(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        body = self.conn.get_active_part_body()
+        sf = part.ShapeFactory
+
+        feature = self._get_last_shape(args.get("feature_name"))
+        count = args["count"]
+        sketch_name = args.get("sketch_name")
+        if sketch_name:
+            sketch = body.Sketches.Item(sketch_name)
+        else:
+            # Field note: the last item of body.Sketches can be stale right
+            # after CloseEdition; passing sketch_name is more reliable.
+            sketch = self._get_last_sketch(None)
+
+        before = self._body_volume_mm3(part, body)
+        # Field-proven on V5R20: AddNewUserPattern(shape, n) then
+        # AddFeatureToLocatePositions(points sketch). A locating point that
+        # coincides with the seed makes the update fail (0x80020009).
+        pattern = sf.AddNewUserPattern(feature, count)
+        pattern.AddFeatureToLocatePositions(sketch)
+        part.UpdateObject(pattern)
+        self.conn.refresh_display()
+        after = self._body_volume_mm3(part, body)
+        effect = ""
+        if before is not None and after is not None:
+            effect = f" Volume {before:.1f} -> {after:.1f} mm3."
+        return (
+            f"User pattern '{pattern.Name}' created: {count} instances placed "
+            f"on the points of sketch '{sketch.Name}'." + effect
         )
 
     def _mirror(self, args: dict[str, Any]) -> str:

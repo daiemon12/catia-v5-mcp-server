@@ -319,6 +319,10 @@ class SketcherTools:
         self._ensure_sketch_open()
         sketch = self._active_sketch
         try:
+            name = str(sketch.Name)
+        except Exception:
+            name = "sketch"
+        try:
             sketch.CloseEdition()
             self.conn.get_active_part().UpdateObject(sketch)
         finally:
@@ -327,7 +331,10 @@ class SketcherTools:
             self._active_sketch = None
             self._active_factory = None
         self.conn.refresh_display()
-        return "Sketch closed. You can now apply Part Design features (pad, pocket, etc.)."
+        return (
+            f"Sketch '{name}' closed. You can now apply Part Design features "
+            "(pad, pocket, user pattern on its points, etc.)."
+        )
 
     def _draw_line(self, x1: float, y1: float, x2: float, y2: float) -> str:
         self._ensure_sketch_open()

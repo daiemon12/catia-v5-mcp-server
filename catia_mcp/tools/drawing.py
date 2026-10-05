@@ -124,6 +124,14 @@ class DraftingTools:
                                 "open Part when unambiguous."
                             ),
                         },
+                        "body_name": {
+                            "type": "string",
+                            "description": (
+                                "Optional body to draw alone (e.g. 'PartBody' "
+                                "or 'Body.2'); other bodies are excluded. "
+                                "Field-validated on V5R20."
+                            ),
+                        },
                         "plane": {
                             "type": "string",
                             "enum": ["xy", "yz", "zx"],
@@ -233,7 +241,15 @@ class DraftingTools:
         view = sheet.Views.Add(args.get("name") or "Front View")
 
         gb = view.GenerativeBehavior
-        gb.Document = part_doc
+        body_name = args.get("body_name")
+        if body_name:
+            # gb.Document accepts a Body and then draws that body only
+            # (field-validated with a control view on V5R20).
+            gb.Document = part_doc.Part.Bodies.Item(body_name)
+            source = f"{part_doc.Name} / {body_name}"
+        else:
+            gb.Document = part_doc
+            source = str(part_doc.Name)
         gb.DefineFrontView(vx1, vy1, vz1, vx2, vy2, vz2)
 
         view.x = args.get("x", 300)
@@ -242,7 +258,7 @@ class DraftingTools:
 
         self.conn.refresh_display()
         return (
-            f"View '{view.Name}' of '{part_doc.Name}' added to sheet "
+            f"View '{view.Name}' of '{source}' added to sheet "
             f"'{sheet.Name}' ({plane.upper()} projection) and updated."
         )
 

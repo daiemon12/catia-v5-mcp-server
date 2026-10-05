@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **84 tools** that let an AI agent:
+This MCP server exposes **85 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -256,7 +256,7 @@ catia-v5-mcp-server/
 │       ├── __init__.py
 │       ├── document.py      # Document management (9 tools)
 │       ├── sketcher.py      # 2D Sketch tools (11 tools)
-│       ├── part_design.py   # 3D Part Design features (16 tools)
+│       ├── part_design.py   # 3D Part Design features (17 tools)
 │       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
@@ -321,7 +321,7 @@ CATIA V5 Application
 | `catia_sketch_constraint` | Add dimensional/geometric constraint |
 | `catia_sketch_get_geometry` | List sketch geometry elements |
 
-### Part Design Tools (16)
+### Part Design Tools (17)
 | Tool | Description |
 |------|-------------|
 | `catia_pad` | Pad (extrusion) |
@@ -332,7 +332,8 @@ CATIA V5 Application
 | `catia_chamfer` | Chamfer (edge bevel) |
 | `catia_hole` | Hole (simple, counterbored, countersunk) |
 | `catia_rect_pattern` | Rectangular pattern |
-| `catia_circ_pattern` | Circular pattern |
+| `catia_circ_pattern` | Circular pattern around a chosen axis and center |
+| `catia_user_pattern` | User pattern: copies placed on the points of a sketch |
 | `catia_mirror` | Mirror about a plane |
 | `catia_shell` | Shell (hollow out) |
 | `catia_draft` | Draft angle |

@@ -5,6 +5,20 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- **`catia_user_pattern`** (85 tools total): copies of a feature placed on
+  the points of a sketch, via AddNewUserPattern + AddFeatureToLocatePositions.
+  Field-validated on V5R20 (5 bosses measured on their sketch points).
+- `catia_circ_pattern` takes `axis` (x/y/z) and `center`; the rotation axis
+  Reference is minted from a GSD line in a throwaway donor document, the
+  only route accepted on V5R20 (an in-document GSD line makes the call
+  fail with 0x80020009). Validated: 4 bosses at radius 40 mm, 0/90/180/270.
+- `catia_rect_pattern` defaults its directions to the origin planes
+  (PlaneYZ -> X, PlaneZX -> Y), validated on a measured 2x2 grid; explicit
+  edges remain available.
+- `catia_drawing_add_view` takes `body_name` to draw a single body
+  (validated with a control view on V5R20).
+- `catia_close_sketch` reports the closed sketch's name so later tools can
+  address it reliably.
 - `catia_rect_pattern` accepts optional `dir1_edge`/`dir2_edge` ('Edge.N')
   to pin the pattern directions on real topology edges. Field-proven on
   V5R20: edge references from the selection are accepted as directions,
