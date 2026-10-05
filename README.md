@@ -18,7 +18,7 @@ This MCP server exposes **85 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
-- **Part Design** — Pad, Pocket, Shaft, Groove, Fillet, Chamfer, Hole, Shell, Draft, Thickness, Patterns (rectangular/circular), Mirror
+- **Part Design** — Pad, Pocket, Shaft, Groove, Fillet, Chamfer, Hole, Shell, Draft, Thickness, Patterns (rectangular/circular/user), Mirror
 - **Generative Shape Design (GSD)** — 3D wireframe (points, lines, planes, splines, circles), Multi-sections Surface (loft), Sweep, Extrude, Revolve, Fill, Blend, Offset, Join, Split, Trim, Symmetry, ThickSurface/CloseSurface to solids
 - **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
 - **Measurement** — distance, inertia, bounding box, parameters
@@ -405,7 +405,7 @@ CATIA V5 Application
 | Tool | Description |
 |------|-------------|
 | `catia_new_drawing` | Create a Drawing document (CATDrawing) |
-| `catia_drawing_add_view` | Add a generative front view of a part on the active sheet (xy/yz/zx projection) |
+| `catia_drawing_add_view` | Add a generative front view of a part, or of a single body, on the active sheet (xy/yz/zx projection) |
 | `catia_drawing_list_view_geometry` | List a view's 2D geometry as indexed elements for dimensioning |
 | `catia_drawing_add_dimension` | Add an associative dimension (distance/length/angle/radius/diameter) between indexed elements |
 

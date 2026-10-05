@@ -7,7 +7,7 @@ All notable changes to this project are documented here.
 ### Added
 - **`catia_user_pattern`** (85 tools total): copies of a feature placed on
   the points of a sketch, via AddNewUserPattern + AddFeatureToLocatePositions.
-  Field-validated on V5R20 (5 bosses measured on their sketch points).
+  Field-validated on V5R20 (4 copies measured on their sketch points plus the seed).
 - `catia_circ_pattern` takes `axis` (x/y/z) and `center`; the rotation axis
   Reference is minted from a GSD line in a throwaway donor document, the
   only route accepted on V5R20 (an in-document GSD line makes the call

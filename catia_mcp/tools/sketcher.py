@@ -299,6 +299,7 @@ class SketcherTools:
 
         # Open the sketch for editing
         self._active_sketch = sketch
+        self._sketch_part = part
         self._active_factory = sketch.OpenEdition()
 
         plane_names = {"xy": "XY (front)", "yz": "YZ (right)", "zx": "ZX (top)"}
@@ -324,7 +325,8 @@ class SketcherTools:
             name = "sketch"
         try:
             sketch.CloseEdition()
-            self.conn.get_active_part().UpdateObject(sketch)
+            owner = getattr(self, "_sketch_part", None) or self.conn.get_active_part()
+            owner.UpdateObject(sketch)
         finally:
             # Clear cached state even when the close fails, so a broken
             # handle cannot poison subsequent calls.
@@ -417,7 +419,13 @@ class SketcherTools:
     def _draw_point(self, x: float, y: float) -> str:
         self._ensure_sketch_open()
         factory = self._active_factory
-        factory.CreatePoint(x, y)
+        point = factory.CreatePoint(x, y)
+        # CreatePoint defaults to construction geometry, which user patterns
+        # (AddFeatureToLocatePositions) ignore. Field-validated on V5R20.
+        try:
+            point.Construction = False
+        except Exception:
+            pass
         return f"Point created at ({x}, {y}) mm"
 
     # CatConstraintType values from the R20 automation reference

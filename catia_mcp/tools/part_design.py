@@ -310,14 +310,14 @@ class PartDesignTools:
                         },
                         "sketch_name": {
                             "type": "string",
-                            "description": "Name of the points sketch (e.g. 'Sketch.3'); defaults to the last sketch",
+                            "description": "REQUIRED: name of the points sketch as reported by catia_close_sketch (e.g. 'Sketch.3')",
                         },
                         "feature_name": {
                             "type": "string",
                             "description": "Feature to pattern. Defaults to last feature.",
                         },
                     },
-                    "required": ["count"],
+                    "required": ["count", "sketch_name"],
                 },
             },
             {
@@ -491,7 +491,14 @@ class PartDesignTools:
         sketches = body.Sketches
 
         if sketch_name:
-            return sketches.Item(sketch_name)
+            try:
+                return sketches.Item(sketch_name)
+            except Exception:
+                names = ", ".join(str(sketches.Item(i).Name) for i in range(1, sketches.Count + 1))
+                raise RuntimeError(
+                    f"No sketch named '{sketch_name}' in the active body. "
+                    f"Available: {names or 'none'}."
+                )
 
         # Get the last sketch
         if sketches.Count == 0:
@@ -504,7 +511,14 @@ class PartDesignTools:
         shapes = body.Shapes
 
         if feature_name:
-            return shapes.Item(feature_name)
+            try:
+                return shapes.Item(feature_name)
+            except Exception:
+                names = ", ".join(str(shapes.Item(i).Name) for i in range(1, shapes.Count + 1))
+                raise RuntimeError(
+                    f"No feature named '{feature_name}' in the active body. "
+                    f"Available: {names or 'none'}."
+                )
 
         if shapes.Count == 0:
             raise RuntimeError("No features found in the active body.")
@@ -645,6 +659,24 @@ class PartDesignTools:
         part.UpdateObject(groove)
         self.conn.refresh_display()
         return f"Groove (revolution cut) created: {angle}°. Feature: '{groove.Name}'"
+
+    def _safe_update(self, part: Any, feature: Any) -> None:
+        """Update a feature; if CATIA rejects it, remove the broken feature
+        from the tree so a failed attempt does not poison later features."""
+        try:
+            part.UpdateObject(feature)
+        except Exception as e:
+            try:
+                selection = self.conn.hso
+                selection.Clear()
+                selection.Add(feature)
+                selection.Delete()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"CATIA rejected the feature (update failed) and it was "
+                f"removed from the tree: {e}"
+            ) from e
 
     def _topo_reference(self, kind: str, index: int) -> Any:
         """Resolve Face.N / Edge.N on the body's final shape to a Reference.
@@ -798,7 +830,7 @@ class PartDesignTools:
         # topology edge references (Selection.Item(i).Reference) are accepted
         # as direction references, and CATIA rejects two PARALLEL directions,
         # so pass two ADJACENT edges (sharing a corner). Without explicit
-        # edges, empty-name references let CATIA pick default directions.
+        # edges, the origin planes give deterministic X/Y directions.
         dir1_edge = args.get("dir1_edge")
         dir2_edge = args.get("dir2_edge")
         if bool(dir1_edge) != bool(dir2_edge):
@@ -821,6 +853,7 @@ class PartDesignTools:
             directions = "origin PlaneYZ -> dir1 (X), PlaneZX -> dir2 (Y)"
 
         before = self._body_volume_mm3(part, body)
+        part.InWorkObject = body
         pattern = sf.AddNewRectPattern(
             feature,
             d1_count, d2_count,
@@ -831,7 +864,7 @@ class PartDesignTools:
             0.0,           # rotation angle
         )
 
-        part.UpdateObject(pattern)
+        self._safe_update(part, pattern)
         self.conn.refresh_display()
         after = self._body_volume_mm3(part, body)
         effect = ""
@@ -854,7 +887,10 @@ class PartDesignTools:
         """
         app = self.conn.app
         target_doc = app.ActiveDocument
+        target_name = str(target_doc.Name)
+        previous_alerts = None
         try:
+            previous_alerts = app.DisplayFileAlerts
             app.DisplayFileAlerts = False
         except Exception:
             pass
@@ -875,7 +911,11 @@ class PartDesignTools:
             )
             geoset.AppendHybridShape(line)
             donor.Update()
-            return donor.CreateReferenceFromObject(line)
+            # Both references are minted from the donor, exactly as the
+            # validated recipe does.
+            axis_ref = donor.CreateReferenceFromObject(line)
+            center_ref = donor.CreateReferenceFromName("")
+            return axis_ref, center_ref
         finally:
             try:
                 donor_doc.Close()
@@ -885,6 +925,22 @@ class PartDesignTools:
                 target_doc.Activate()
             except Exception:
                 pass
+            if previous_alerts is not None:
+                try:
+                    app.DisplayFileAlerts = previous_alerts
+                except Exception:
+                    pass
+            try:
+                if str(app.ActiveDocument.Name) != target_name:
+                    raise RuntimeError(
+                        f"Could not re-activate '{target_name}' after the "
+                        "donor round trip; aborting before patterning the "
+                        "wrong document."
+                    )
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
 
     def _circ_pattern(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -892,26 +948,43 @@ class PartDesignTools:
         body = self.conn.get_active_part_body()
         sf = part.ShapeFactory
 
-        feature = self._get_last_shape(args.get("feature_name"))
-        count = args["count"]
-        angular_spacing = args.get("angular_spacing", 360.0 / count)
+        count = int(args["count"])
+        if count < 1:
+            raise ValueError("count must be at least 1")
+        angular_spacing = args.get("angular_spacing")
+        if angular_spacing is None:
+            angular_spacing = 360.0 / count
         axis = (args.get("axis") or "z").lower()
         if axis not in ("x", "y", "z"):
             raise ValueError("axis must be 'x', 'y' or 'z'")
         center = args.get("center") or [0.0, 0.0, 0.0]
         if len(center) != 3:
             raise ValueError("center must be [x, y, z] in mm")
+        # Field-proven precondition: AddNewCircPattern fails with 0x80020009
+        # when the patterned document itself contains GSD geometry.
+        try:
+            geosets = part.HybridBodies.Count
+        except Exception:
+            geosets = 0
+        if geosets:
+            raise RuntimeError(
+                "catia_circ_pattern cannot run on a part that contains "
+                "geometrical sets (GSD geometry): CATIA rejects the pattern "
+                "with 0x80020009 in that case. Remove the geometrical sets "
+                "or pattern a GSD-free part."
+            )
+        self._get_last_shape(args.get("feature_name"))  # validate early
 
-        axis_ref = self._mint_axis_reference(axis, center)
+        axis_ref, center_ref = self._mint_axis_reference(axis, center)
         # Re-resolve after the donor round trip: the active document changed
         # and came back.
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
         sf = part.ShapeFactory
         feature = self._get_last_shape(args.get("feature_name"))
-        center_ref = part.CreateReferenceFromName("")
 
         before = self._body_volume_mm3(part, body)
+        part.InWorkObject = body
         # AddNewCircPattern takes 12 parameters; instances around the axis
         # belong in the ANGULAR slot (3rd). Flags as field-validated
         # (4 bosses at radius 40, angles 0/90/180/270 on V5R20).
@@ -926,7 +999,7 @@ class PartDesignTools:
             False,                 # radius aligned
         )
 
-        part.UpdateObject(pattern)
+        self._safe_update(part, pattern)
         self.conn.refresh_display()
         after = self._body_volume_mm3(part, body)
         effect = ""
@@ -945,22 +1018,28 @@ class PartDesignTools:
         sf = part.ShapeFactory
 
         feature = self._get_last_shape(args.get("feature_name"))
-        count = args["count"]
+        count = int(args["count"])
+        if count < 1:
+            raise ValueError("count must be at least 1")
         sketch_name = args.get("sketch_name")
-        if sketch_name:
-            sketch = body.Sketches.Item(sketch_name)
-        else:
-            # Field note: the last item of body.Sketches can be stale right
-            # after CloseEdition; passing sketch_name is more reliable.
-            sketch = self._get_last_sketch(None)
+        if not sketch_name:
+            # Field-proven trap: the last item of body.Sketches is stale right
+            # after CloseEdition and resolves to the previous sketch, so the
+            # points sketch must be addressed by name.
+            raise ValueError(
+                "catia_user_pattern requires 'sketch_name': the points sketch "
+                "name reported by catia_close_sketch (e.g. 'Sketch.3')."
+            )
+        sketch = self._get_last_sketch(sketch_name)
 
         before = self._body_volume_mm3(part, body)
+        part.InWorkObject = body
         # Field-proven on V5R20: AddNewUserPattern(shape, n) then
         # AddFeatureToLocatePositions(points sketch). A locating point that
         # coincides with the seed makes the update fail (0x80020009).
         pattern = sf.AddNewUserPattern(feature, count)
         pattern.AddFeatureToLocatePositions(sketch)
-        part.UpdateObject(pattern)
+        self._safe_update(part, pattern)
         self.conn.refresh_display()
         after = self._body_volume_mm3(part, body)
         effect = ""

@@ -50,11 +50,13 @@ class DraftingTools:
             {
                 "name": "catia_drawing_list_view_geometry",
                 "description": (
-                    "List the 2D geometry of a drawing view (generated "
-                    "projections included) as indexed elements. The agent "
-                    "picks elements from this list to place dimensions with "
-                    "catia_drawing_add_dimension. Defaults to the last view "
-                    "of the active sheet."
+                    "List the 2D geometry of a drawing view as indexed "
+                    "elements for catia_drawing_add_dimension. Caution: a "
+                    "V5R20 field report measured GeometricElements.Count = 1 "
+                    "on generative views, so projected geometry may not be "
+                    "itemized there (under validation); interactive 2D "
+                    "geometry lists normally. Defaults to the last view of "
+                    "the active sheet."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -245,7 +247,16 @@ class DraftingTools:
         if body_name:
             # gb.Document accepts a Body and then draws that body only
             # (field-validated with a control view on V5R20).
-            gb.Document = part_doc.Part.Bodies.Item(body_name)
+            bodies = part_doc.Part.Bodies
+            try:
+                target_body = bodies.Item(body_name)
+            except Exception:
+                names = ", ".join(str(bodies.Item(i).Name) for i in range(1, bodies.Count + 1))
+                raise RuntimeError(
+                    f"No body named '{body_name}' in '{part_doc.Name}'. "
+                    f"Top-level bodies: {names or 'none'}."
+                )
+            gb.Document = target_body
             source = f"{part_doc.Name} / {body_name}"
         else:
             gb.Document = part_doc
