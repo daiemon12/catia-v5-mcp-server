@@ -472,6 +472,25 @@ This project is open-source. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelin
 - **Tests** with COM mocking
 - **3DEXPERIENCE** CATIA support
 
+## Services and support
+
+The server is free and MIT licensed. If your company runs CATIA V5 and
+wants to go further, the maintainer is available for paid work:
+
+- **Custom tools**: new MCP tools for your workflows (drawing frames and
+  title blocks, BOM automation, Knowledgeware templates, batch exports).
+- **Macro modernization**: turning legacy VBA/CATScript macros into
+  agent-callable tools, or auditing them before migration.
+- **Pilot and training**: a one-day workshop on agent-driven CATIA
+  automation, followed by a pilot on one of your real parts.
+- **Priority support**: a dedicated channel and response times for teams
+  running the server in production.
+
+Contact: open a discussion on GitHub, join the
+[Discord](https://discord.gg/S6Yq6kFaa), or reach the maintainer on
+[LinkedIn](https://www.linkedin.com/in/daiemon12/). Sponsorship through
+GitHub Sponsors keeps the free version maintained.
+
 ## License
 
 MIT
