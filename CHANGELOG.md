@@ -5,6 +5,19 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- **Drafting views and annotations (93 tools total)**:
+  `catia_drawing_projection_view` (right/left/top/bottom/rear via
+  DefineProjectionView with the documented CatProjViewType values),
+  `catia_drawing_section_view` (section view or cut along a polyline
+  profile via DefineSectionView), `catia_drawing_detail_view`
+  (DefineCircularDetailView), `catia_drawing_add_text` (DrawingTexts.Add)
+  and `catia_drawing_add_table` (DrawingTables.Add with cell filling and
+  column widths, the building block for title blocks and BOMs). Signatures
+  taken from the V5 automation reference; derived from the drafting work
+  proposed in PR #3, rewritten to the project's conventions. Awaiting live
+  validation.
+- `catia_delete_feature`: delete a feature by name through the selection
+  (from PR #2's proposal).
 - **Dimensioning generative views the way CATIA actually allows it** (87
   tools total). A V5R20 live lab established that generated projection
   curves are never exposed to Automation (GeometricElements shows only

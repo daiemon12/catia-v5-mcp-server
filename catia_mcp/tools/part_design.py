@@ -413,6 +413,24 @@ class PartDesignTools:
                 },
             },
             {
+                "name": "catia_delete_feature",
+                "description": (
+                    "Delete a feature of the active body by name (e.g. "
+                    "'Pocket.2'), then update the part. Dependent features "
+                    "may be invalidated by CATIA."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "feature_name": {
+                            "type": "string",
+                            "description": "Feature to delete (see catia_list_features)",
+                        },
+                    },
+                    "required": ["feature_name"],
+                },
+            },
+            {
                 "name": "catia_list_features",
                 "description": "List all features in the active Part Body with their names and types.",
                 "inputSchema": {
@@ -483,6 +501,8 @@ class PartDesignTools:
                 return self._draft(arguments)
             case "catia_thickness":
                 return self._thickness(arguments)
+            case "catia_delete_feature":
+                return self._delete_feature(arguments)
             case "catia_list_features":
                 return self._list_features()
             case "catia_list_faces":
@@ -1178,6 +1198,25 @@ class PartDesignTools:
         part.UpdateObject(thickness)
         self.conn.refresh_display()
         return f"Thickness added: {offset} mm on {face_name}. Feature: '{thickness.Name}'"
+
+    def _delete_feature(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        feature = self._get_last_shape(args["feature_name"])
+        name = str(feature.Name)
+        sel = self.conn.hso
+        try:
+            sel.Clear()
+            sel.Add(feature)
+            sel.Delete()
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
+        part.Update()
+        self.conn.refresh_display()
+        return f"Feature '{name}' deleted."
 
     def _list_features(self) -> str:
         self.conn.ensure_connected()

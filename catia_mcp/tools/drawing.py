@@ -24,6 +24,10 @@ from catia_mcp.tools.measurement import read_measurable_array
 
 # DefineFrontView takes the two sheet-plane axis vectors expressed in the
 # 3D part's coordinate system.
+# CatProjViewType (R20 automation enum, verified against the V5 reference
+# binding): the projection of a view relative to its parent.
+_PROJECTION_TYPES = {"right": 0, "left": 1, "top": 2, "bottom": 3, "rear": 4}
+
 _PLANE_VECTORS = {
     "xy": (1, 0, 0, 0, 1, 0),
     "yz": (0, 1, 0, 0, 0, 1),
@@ -154,6 +158,156 @@ class DraftingTools:
                 },
             },
             {
+                "name": "catia_drawing_projection_view",
+                "description": (
+                    "Add a projection view (right/left/top/bottom/rear) "
+                    "derived from an existing generative view, placed next "
+                    "to it at the same scale. DefineProjectionView with the "
+                    "documented CatProjViewType enum."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "direction": {
+                            "type": "string",
+                            "enum": ["right", "left", "top", "bottom", "rear"],
+                            "description": "Projection relative to the parent view",
+                        },
+                        "parent_view": {
+                            "type": "string",
+                            "description": "Parent view name (default: last view of the active sheet)",
+                        },
+                        "name": {"type": "string", "description": "New view name (default '<direction> view')"},
+                        "gap": {
+                            "type": "number",
+                            "description": "Distance from the parent view in mm (default 100)",
+                        },
+                        "x": {"type": "number", "description": "Explicit X position in mm (overrides gap)"},
+                        "y": {"type": "number", "description": "Explicit Y position in mm (overrides gap)"},
+                    },
+                    "required": ["direction"],
+                },
+            },
+            {
+                "name": "catia_drawing_section_view",
+                "description": (
+                    "Add a section view or section cut from a cutting "
+                    "profile drawn as a polyline in the parent view's 2D "
+                    "coordinates (mm). DefineSectionView per the V5 "
+                    "reference: profile points, section type, profile type, "
+                    "side to draw, parent view."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "profile": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "description": "Flat list [x1, y1, x2, y2, ...] of the cutting polyline in parent view coordinates (mm), at least two points",
+                        },
+                        "parent_view": {"type": "string", "description": "Parent view name (default: last view)"},
+                        "section_type": {
+                            "type": "string",
+                            "enum": ["SectionView", "SectionCut"],
+                            "description": "SectionView shows geometry behind the plane, SectionCut only the cut (default SectionView)",
+                        },
+                        "profile_type": {
+                            "type": "string",
+                            "enum": ["Offset", "Aligned"],
+                            "description": "Cutting profile type (default Offset)",
+                        },
+                        "side": {
+                            "type": "integer",
+                            "enum": [0, 1],
+                            "description": "Side to draw: 0 clockwise, 1 counterclockwise (default 1)",
+                        },
+                        "name": {"type": "string", "description": "New view name"},
+                        "x": {"type": "number", "description": "X position in mm (default: parent x + 150)"},
+                        "y": {"type": "number", "description": "Y position in mm (default: parent y)"},
+                    },
+                    "required": ["profile"],
+                },
+            },
+            {
+                "name": "catia_drawing_detail_view",
+                "description": (
+                    "Add a circular detail view of a region of the parent "
+                    "view (center and radius in the parent view's 2D "
+                    "coordinates, mm). DefineCircularDetailView."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "center_x": {"type": "number", "description": "Circle center X in parent view coordinates (mm)"},
+                        "center_y": {"type": "number", "description": "Circle center Y in parent view coordinates (mm)"},
+                        "radius": {"type": "number", "description": "Circle radius (mm)"},
+                        "parent_view": {"type": "string", "description": "Parent view name (default: last view)"},
+                        "scale": {"type": "number", "description": "Detail scale factor (default 2)"},
+                        "name": {"type": "string", "description": "New view name"},
+                        "x": {"type": "number", "description": "X position in mm (default: parent x + 150)"},
+                        "y": {"type": "number", "description": "Y position in mm (default: parent y + 100)"},
+                    },
+                    "required": ["center_x", "center_y", "radius"],
+                },
+            },
+            {
+                "name": "catia_drawing_add_text",
+                "description": (
+                    "Add a text annotation to a drawing view at (x, y) mm in "
+                    "the view's coordinate system (DrawingTexts.Add). Use the "
+                    "sheet's Background view for title block text."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "Text content"},
+                        "x": {"type": "number", "description": "X in mm (view coordinates)"},
+                        "y": {"type": "number", "description": "Y in mm (view coordinates)"},
+                        "view_name": {
+                            "type": "string",
+                            "description": "Target view (default: last view; use 'Background View' for frames and title blocks)",
+                        },
+                    },
+                    "required": ["text", "x", "y"],
+                },
+            },
+            {
+                "name": "catia_drawing_add_table",
+                "description": (
+                    "Add a table to a drawing view (DrawingTables.Add) and "
+                    "optionally fill its cells. Building block for title "
+                    "blocks, revision tables and BOMs: pass 'cells' as rows "
+                    "of strings, optional per-column widths, and the "
+                    "Background View as target for sheet-level tables."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "number", "description": "Table X in mm (view coordinates)"},
+                        "y": {"type": "number", "description": "Table Y in mm (view coordinates)"},
+                        "rows": {"type": "integer", "description": "Number of rows"},
+                        "columns": {"type": "integer", "description": "Number of columns"},
+                        "row_height": {"type": "number", "description": "Row height in mm (default 8)"},
+                        "column_width": {"type": "number", "description": "Column width in mm (default 40)"},
+                        "cells": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {"type": "string"}},
+                            "description": "Optional cell contents, row-major, e.g. [[\"Part\", \"Qty\"], [\"Bracket\", \"2\"]]",
+                        },
+                        "column_widths": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "description": "Optional per-column widths in mm (0 = automatic)",
+                        },
+                        "view_name": {
+                            "type": "string",
+                            "description": "Target view (default: last view; use 'Background View' for title blocks)",
+                        },
+                    },
+                    "required": ["x", "y", "rows", "columns"],
+                },
+            },
+            {
                 "name": "catia_drawing_add_view",
                 "description": (
                     "Add a generative front view of an open Part to the "
@@ -225,6 +379,16 @@ class DraftingTools:
                 return self._new_drawing()
             case "catia_drawing_add_view":
                 return self._add_view(arguments)
+            case "catia_drawing_projection_view":
+                return self._projection_view(arguments)
+            case "catia_drawing_section_view":
+                return self._section_view(arguments)
+            case "catia_drawing_detail_view":
+                return self._detail_view(arguments)
+            case "catia_drawing_add_text":
+                return self._add_text(arguments)
+            case "catia_drawing_add_table":
+                return self._add_table(arguments)
             case "catia_drawing_generate_dimensions":
                 return self._generate_dimensions(arguments)
             case "catia_drawing_list_dimensions":
@@ -618,4 +782,156 @@ class DraftingTools:
         return _json.dumps(
             {"view": str(view.Name), "dimensions": self._dimension_rows(view)},
             indent=2,
+        )
+
+    def _find_view_any(self, view_name: str | None) -> Any:
+        """Like _find_view but also accepts the sheet's Main/Background views
+        by name (title blocks and frames live in the Background View)."""
+        if view_name:
+            drawing = self._find_active_drawing()
+            views = drawing.Sheets.ActiveSheet.Views
+            for i in range(1, views.Count + 1):
+                v = views.Item(i)
+                if str(v.Name) == view_name:
+                    return v
+            names = ", ".join(str(views.Item(i).Name) for i in range(1, views.Count + 1))
+            raise RuntimeError(f"No view named '{view_name}'. Views: {names}.")
+        return self._find_view(None)
+
+    def _derived_view(self, args: dict[str, Any], default_name: str) -> tuple[Any, Any, Any]:
+        """Create a new view on the active sheet that derives from a parent
+        generative view, carrying the parent's 3D link. Returns
+        (sheet, parent, view)."""
+        drawing = self._find_active_drawing()
+        sheet = drawing.Sheets.ActiveSheet
+        parent = self._find_view(args.get("parent_view"))
+        view = sheet.Views.Add(args.get("name") or default_name)
+        # A derived view needs the same 3D source as its parent, otherwise
+        # the projection relationship exists but generates no geometry.
+        try:
+            view.GenerativeBehavior.Document = parent.GenerativeBehavior.Document
+        except Exception:
+            pass
+        return sheet, parent, view
+
+    @staticmethod
+    def _place(view: Any, x: float, y: float, scale: float | None = None) -> None:
+        if scale:
+            try:
+                view.Scale = scale
+            except Exception:
+                pass
+        view.x = x
+        view.y = y
+
+    def _projection_view(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        direction = str(args["direction"]).lower()
+        if direction not in _PROJECTION_TYPES:
+            raise ValueError(f"Unknown direction '{direction}'. Use right, left, top, bottom or rear.")
+        sheet, parent, view = self._derived_view(args, f"{direction} view")
+        gb = view.GenerativeBehavior
+        gb.DefineProjectionView(parent.GenerativeBehavior, _PROJECTION_TYPES[direction])
+        # Derived views land at (0, 0) / 1:1 through the API: match the
+        # parent's scale and offset in the projection direction.
+        gap = float(args.get("gap", 100.0))
+        offsets = {
+            "right": (gap, 0.0), "left": (-gap, 0.0), "top": (0.0, gap),
+            "bottom": (0.0, -gap), "rear": (2 * gap, 0.0),
+        }
+        dx, dy = offsets[direction]
+        try:
+            px, py, pscale = float(parent.x), float(parent.y), float(parent.Scale)
+        except Exception:
+            px, py, pscale = 0.0, 0.0, 1.0
+        self._place(view, args.get("x", px + dx), args.get("y", py + dy), pscale)
+        gb.Update()
+        self.conn.refresh_display()
+        return (
+            f"Projection view '{view.Name}' ({direction}) of '{parent.Name}' "
+            f"added to sheet '{sheet.Name}' and updated."
+        )
+
+    def _section_view(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        profile = [float(v) for v in args["profile"]]
+        if len(profile) < 4 or len(profile) % 2:
+            raise ValueError("profile must be a flat list [x1, y1, x2, y2, ...] with at least two points")
+        section_type = args.get("section_type") or "SectionView"
+        profile_type = args.get("profile_type") or "Offset"
+        if section_type not in ("SectionView", "SectionCut"):
+            raise ValueError("section_type must be 'SectionView' or 'SectionCut'")
+        if profile_type not in ("Offset", "Aligned"):
+            raise ValueError("profile_type must be 'Offset' or 'Aligned'")
+        side = int(args.get("side", 1))
+        sheet, parent, view = self._derived_view(args, "section view")
+        gb = view.GenerativeBehavior
+        # DefineSectionView(iProfile, iSectionType, iProfileType, iSideToDraw,
+        # iParentGB); the profile is an input safearray, which marshals.
+        gb.DefineSectionView(profile, section_type, profile_type, side, parent.GenerativeBehavior)
+        try:
+            px, py, pscale = float(parent.x), float(parent.y), float(parent.Scale)
+        except Exception:
+            px, py, pscale = 0.0, 0.0, 1.0
+        self._place(view, args.get("x", px + 150.0), args.get("y", py), pscale)
+        gb.Update()
+        self.conn.refresh_display()
+        return (
+            f"{section_type} '{view.Name}' from '{parent.Name}' added to sheet "
+            f"'{sheet.Name}' ({profile_type}, {len(profile) // 2} profile points) and updated."
+        )
+
+    def _detail_view(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        sheet, parent, view = self._derived_view(args, "detail view")
+        gb = view.GenerativeBehavior
+        gb.DefineCircularDetailView(
+            float(args["center_x"]), float(args["center_y"]), float(args["radius"]),
+            parent.GenerativeBehavior,
+        )
+        try:
+            px, py, pscale = float(parent.x), float(parent.y), float(parent.Scale)
+        except Exception:
+            px, py, pscale = 0.0, 0.0, 1.0
+        scale = float(args.get("scale", 2.0)) * pscale
+        self._place(view, args.get("x", px + 150.0), args.get("y", py + 100.0), scale)
+        gb.Update()
+        self.conn.refresh_display()
+        return (
+            f"Detail view '{view.Name}' of '{parent.Name}' (r={args['radius']} mm at "
+            f"({args['center_x']}, {args['center_y']}), scale x{args.get('scale', 2.0)}) added."
+        )
+
+    def _add_text(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        view = self._find_view_any(args.get("view_name"))
+        text = view.Texts.Add(str(args["text"]), float(args["x"]), float(args["y"]))
+        self.conn.refresh_display()
+        return f"Text '{text.Name}' added to view '{view.Name}' at ({args['x']}, {args['y']}) mm."
+
+    def _add_table(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        view = self._find_view_any(args.get("view_name"))
+        rows, cols = int(args["rows"]), int(args["columns"])
+        if rows < 1 or cols < 1:
+            raise ValueError("rows and columns must be at least 1")
+        table = view.Tables.Add(
+            float(args["x"]), float(args["y"]), rows, cols,
+            float(args.get("row_height", 8.0)), float(args.get("column_width", 40.0)),
+        )
+        widths = args.get("column_widths") or []
+        for c, w in enumerate(widths[:cols], start=1):
+            table.SetColumnSize(c, float(w))
+        filled = 0
+        cells = args.get("cells") or []
+        for r, row in enumerate(cells[:rows], start=1):
+            for c, value in enumerate(list(row)[:cols], start=1):
+                if value is None or value == "":
+                    continue
+                table.SetCellString(r, c, str(value))
+                filled += 1
+        self.conn.refresh_display()
+        return (
+            f"Table '{table.Name}' ({rows}x{cols}) added to view '{view.Name}' "
+            f"at ({args['x']}, {args['y']}) mm, {filled} cell(s) filled."
         )

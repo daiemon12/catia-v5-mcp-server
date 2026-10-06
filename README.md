@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **87 tools** that let an AI agent:
+This MCP server exposes **93 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -24,7 +24,7 @@ This MCP server exposes **87 tools** that let an AI agent:
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
-- **Drafting** — create Drawing documents, generative views (axis- or face-driven) and 3D-driven dimensions (experimental, field-contributed)
+- **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
 - **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
 
 ## Requirements
@@ -257,11 +257,11 @@ catia-v5-mcp-server/
 │       ├── __init__.py
 │       ├── document.py      # Document management (9 tools)
 │       ├── sketcher.py      # 2D Sketch tools (11 tools)
-│       ├── part_design.py   # 3D Part Design features (17 tools)
+│       ├── part_design.py   # 3D Part Design features (18 tools)
 │       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
-│       ├── drawing.py       # Drafting: drawings, views & dimensions (6 tools)
+│       ├── drawing.py       # Drafting: drawings, views, dimensions, text & tables (11 tools)
 │       ├── diagnostics.py   # Installation diagnostics (1 tool)
 │       └── export.py        # Export & view control (4 tools)
 ├── pyproject.toml
@@ -322,7 +322,7 @@ CATIA V5 Application
 | `catia_sketch_constraint` | Add dimensional/geometric constraint |
 | `catia_sketch_get_geometry` | List sketch geometry elements |
 
-### Part Design Tools (17)
+### Part Design Tools (18)
 | Tool | Description |
 |------|-------------|
 | `catia_pad` | Pad (extrusion) |
@@ -340,6 +340,7 @@ CATIA V5 Application
 | `catia_draft` | Draft angle |
 | `catia_thickness` | Thickness offset |
 | `catia_list_features` | List features in body |
+| `catia_delete_feature` | Delete a feature by name |
 | `catia_list_edges` | List edges of the final solid as indexed Edge.N names |
 | `catia_list_faces` | List faces of the final solid as indexed Face.N names |
 
@@ -402,11 +403,16 @@ CATIA V5 Application
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
 
-### Drafting Tools (6) — experimental
+### Drafting Tools (11) — experimental
 | Tool | Description |
 |------|-------------|
 | `catia_new_drawing` | Create a Drawing document (CATDrawing) |
 | `catia_drawing_add_view` | Add a generative view of a part or a single body: xy/yz/zx projection, or face-driven (projected on a chosen planar face), with in-plane rotation |
+| `catia_drawing_projection_view` | Right/left/top/bottom/rear projection of an existing view |
+| `catia_drawing_section_view` | Section view or section cut along a polyline profile |
+| `catia_drawing_detail_view` | Circular detail view of a region |
+| `catia_drawing_add_text` | Text annotation in a view (Background View for title blocks) |
+| `catia_drawing_add_table` | Table with optional cell contents (title blocks, revision tables, BOM) |
 | `catia_drawing_generate_dimensions` | Generate associative dimensions from the part's 3D sketch constraints (the only route to dimension generated geometry in V5) |
 | `catia_drawing_list_dimensions` | List a view's dimensions with values and status |
 | `catia_drawing_list_view_geometry` | List a view's manually drawn 2D geometry (generated curves are not exposed by CATIA) |
