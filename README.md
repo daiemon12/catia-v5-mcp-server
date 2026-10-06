@@ -486,10 +486,9 @@ wants to go further, the maintainer is available for paid work:
 - **Priority support**: a dedicated channel and response times for teams
   running the server in production.
 
-Contact: open a discussion on GitHub, join the
-[Discord](https://discord.gg/S6Yq6kFaa), or reach the maintainer on
-[LinkedIn](https://www.linkedin.com/in/daiemon12/). Sponsorship through
-GitHub Sponsors keeps the free version maintained.
+Contact: open a discussion on GitHub or join the
+[Discord](https://discord.gg/S6Yq6kFaa). Sponsorship through GitHub
+Sponsors keeps the free version maintained.
 
 ## License
 
