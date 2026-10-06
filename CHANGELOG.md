@@ -5,6 +5,12 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- **Knowledgeware module (98 tools total)**: `catia_create_parameter`
+  (lengths and angles valuated with explicit units), `catia_set_formula`
+  (create or modify in place), `catia_list_relations`,
+  `catia_delete_relation` and `catia_create_design_table` with column
+  associations, through the documented Parameters/Relations interfaces.
+  Derived from the knowledge module proposed in PR #3.
 - **Drafting views and annotations (93 tools total)**:
   `catia_drawing_projection_view` (right/left/top/bottom/rear via
   DefineProjectionView with the documented CatProjViewType values),

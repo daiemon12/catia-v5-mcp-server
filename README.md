@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **93 tools** that let an AI agent:
+This MCP server exposes **98 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -22,6 +22,7 @@ This MCP server exposes **93 tools** that let an AI agent:
 - **Generative Shape Design (GSD)** — 3D wireframe (points, lines, planes, splines, circles), Multi-sections Surface (loft), Sweep, Extrude, Revolve, Fill, Blend, Offset, Join, Split, Trim, Symmetry, ThickSurface/CloseSurface to solids
 - **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
 - **Measurement** — distance, inertia, bounding box, parameters
+- **Knowledgeware** — user parameters, formulas, design tables, relations
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
 - **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
@@ -262,6 +263,7 @@ catia-v5-mcp-server/
 │       ├── assembly.py      # Assembly/Product tools (9 tools)
 │       ├── measurement.py   # Measurement & analysis (6 tools)
 │       ├── drawing.py       # Drafting: drawings, views, dimensions, text & tables (11 tools)
+│       ├── knowledge.py     # Knowledgeware: parameters, formulas, design tables (5 tools)
 │       ├── diagnostics.py   # Installation diagnostics (1 tool)
 │       └── export.py        # Export & view control (4 tools)
 ├── pyproject.toml
@@ -418,6 +420,15 @@ CATIA V5 Application
 | `catia_drawing_list_view_geometry` | List a view's manually drawn 2D geometry (generated curves are not exposed by CATIA) |
 | `catia_drawing_add_dimension` | Add a dimension between manually drawn 2D elements |
 
+### Knowledgeware Tools (5)
+| Tool | Description |
+|------|-------------|
+| `catia_create_parameter` | Create or set a user parameter (length, angle, real, integer, string, boolean) |
+| `catia_set_formula` | Create or update a formula driving a parameter |
+| `catia_list_relations` | List formulas, design tables, rules and checks |
+| `catia_delete_relation` | Delete a relation by name |
+| `catia_create_design_table` | Create a design table from a sheet and associate parameters |
+
 ### Diagnostics (1)
 | Tool | Description |
 |------|-------------|
@@ -457,7 +468,6 @@ Some measurement methods may not work with late binding. If you encounter issues
 This project is open-source. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Contributions welcome:
 
 - **Drafting** extras: frames and title-block generators, BOM automation
-- **Knowledgeware** (formulas, rules, check)
 - **pycatia backend** as alternative to raw win32com
 - **Tests** with COM mocking
 - **3DEXPERIENCE** CATIA support
