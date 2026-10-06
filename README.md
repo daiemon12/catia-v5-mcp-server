@@ -456,7 +456,7 @@ Some measurement methods may not work with late binding. If you encounter issues
 
 This project is open-source. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Contributions welcome:
 
-- **Drawing** tools (2D drafting)
+- **Drafting** extras: frames and title-block generators, BOM automation
 - **Knowledgeware** (formulas, rules, check)
 - **pycatia backend** as alternative to raw win32com
 - **Tests** with COM mocking

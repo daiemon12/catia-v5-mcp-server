@@ -64,8 +64,8 @@ All notable changes to this project are documented here.
   ESE3X. `catia_drawing_list_view_geometry` lists a view's manually drawn
   2D geometry and `catia_drawing_add_dimension` places dimensions between
   such elements via DrawingDimensions.Add (generated curves are not
-  addressable, see the generate_dimensions entry above). Section views
-  and title blocks are planned follow-ups.
+  addressable, see the generate_dimensions entry above). Section views,
+  text and tables followed (see the entry above).
 - README repositioned as agent-agnostic: per-client MCP setup for Claude
   Desktop/Code, Cursor, Windsurf, Cline, VS Code and generic stdio hosts,
   plus release/CI/license badges.

@@ -10,8 +10,9 @@ views to Automation (field-proven on V5R20), so generative views are
 dimensioned from the part's 3D sketch constraints through
 DrawingSheet.GenerateDimensions (the agent expresses design intent as
 constraints, CATIA places the dimensions). The manual Add path only
-works on 2D geometry drawn in the view. Section views and title blocks
-are planned follow-ups.
+works on 2D geometry drawn in the view. Projection, section and detail
+views, text and tables are provided; frame/title-block generators are
+the next step.
 """
 
 from __future__ import annotations
@@ -312,10 +313,10 @@ class DraftingTools:
                 "description": (
                     "Add a generative front view of an open Part to the "
                     "active Drawing's active sheet, projected on the chosen "
-                    "plane, then update it. Create the drawing first with "
-                    "catia_new_drawing. Experimental: field-validated on "
-                    "V5R20 for front views; projection/section views are "
-                    "planned."
+                    "plane or on a planar face, then update it. Create the "
+                    "drawing first with catia_new_drawing; derive other "
+                    "views with catia_drawing_projection_view / "
+                    "section_view / detail_view. Field-validated on V5R20."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -785,71 +786,119 @@ class DraftingTools:
         )
 
     def _find_view_any(self, view_name: str | None) -> Any:
-        """Like _find_view but also accepts the sheet's Main/Background views
-        by name (title blocks and frames live in the Background View)."""
+        """Resolve a view for annotations: by name (Main/Background views
+        included), else the last user view, else the Background View so
+        title blocks can be filled on an otherwise empty sheet."""
         if view_name:
-            drawing = self._find_active_drawing()
-            views = drawing.Sheets.ActiveSheet.Views
-            for i in range(1, views.Count + 1):
-                v = views.Item(i)
-                if str(v.Name) == view_name:
-                    return v
-            names = ", ".join(str(views.Item(i).Name) for i in range(1, views.Count + 1))
-            raise RuntimeError(f"No view named '{view_name}'. Views: {names}.")
-        return self._find_view(None)
+            return self._find_view(view_name)
+        views = self._find_active_drawing().Sheets.ActiveSheet.Views
+        if views.Count >= 3:
+            return views.Item(views.Count)
+        return views.Item(2) if views.Count >= 2 else views.Item(1)
 
-    def _derived_view(self, args: dict[str, Any], default_name: str) -> tuple[Any, Any, Any]:
-        """Create a new view on the active sheet that derives from a parent
-        generative view, carrying the parent's 3D link. Returns
-        (sheet, parent, view)."""
-        drawing = self._find_active_drawing()
-        sheet = drawing.Sheets.ActiveSheet
-        parent = self._find_view(args.get("parent_view"))
-        view = sheet.Views.Add(args.get("name") or default_name)
-        # A derived view needs the same 3D source as its parent, otherwise
-        # the projection relationship exists but generates no geometry.
+    def _parent_generative_view(self, parent_name: str | None) -> Any:
+        parent = self._find_view(parent_name)
         try:
-            view.GenerativeBehavior.Document = parent.GenerativeBehavior.Document
+            generative = bool(parent.IsGenerative())
         except Exception:
-            pass
-        return sheet, parent, view
+            generative = True  # cannot tell; let CATIA decide
+        if not generative:
+            raise ValueError(
+                f"'{parent.Name}' is not a generative view; derive from a "
+                "view created by catia_drawing_add_view."
+            )
+        return parent
+
+    def _create_derived_view(self, sheet: Any, parent: Any, name: str, define: Any) -> Any:
+        """Add a view, link it to the parent's 3D source, run the Define*
+        call; remove the view again if anything fails so no empty orphan
+        is left on the sheet (and becomes the next default parent)."""
+        view = sheet.Views.Add(name)
+        try:
+            linked = False
+            try:
+                view.GenerativeBehavior.Document = parent.GenerativeBehavior.Document
+                linked = True
+            except Exception:
+                try:
+                    parent.GenerativeLinks.CopyLinksTo(view.GenerativeLinks)
+                    linked = True
+                except Exception:
+                    pass
+            if not linked:
+                raise RuntimeError(
+                    "Could not carry the parent's 3D link to the new view; "
+                    "it would generate no geometry."
+                )
+            define(view)
+            return view
+        except Exception:
+            try:
+                sheet.Views.Remove(view.Name)
+            except Exception:
+                pass
+            raise
 
     @staticmethod
-    def _place(view: Any, x: float, y: float, scale: float | None = None) -> None:
+    def _parent_placement(parent: Any) -> tuple[float, float, float]:
+        try:
+            return float(parent.x), float(parent.y), float(parent.Scale)
+        except Exception:
+            return 0.0, 0.0, 1.0
+
+    @staticmethod
+    def _place(view: Any, x: float, y: float, scale: float | None = None) -> float | None:
+        applied = None
         if scale:
             try:
                 view.Scale = scale
+                applied = float(view.Scale)
             except Exception:
-                pass
+                applied = None
         view.x = x
         view.y = y
+        return applied
 
     def _projection_view(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         direction = str(args["direction"]).lower()
         if direction not in _PROJECTION_TYPES:
             raise ValueError(f"Unknown direction '{direction}'. Use right, left, top, bottom or rear.")
-        sheet, parent, view = self._derived_view(args, f"{direction} view")
-        gb = view.GenerativeBehavior
-        gb.DefineProjectionView(parent.GenerativeBehavior, _PROJECTION_TYPES[direction])
-        # Derived views land at (0, 0) / 1:1 through the API: match the
-        # parent's scale and offset in the projection direction.
         gap = float(args.get("gap", 100.0))
+        drawing = self._find_active_drawing()
+        sheet = drawing.Sheets.ActiveSheet
+        parent = self._parent_generative_view(args.get("parent_view"))
+
+        # Placement follows the sheet's projection method: third angle puts
+        # the right view to the right of the front view, first angle (the
+        # ISO default) puts it to the left. CatSheetProjectionMethod:
+        # 0 = first angle, 1 = third angle.
+        try:
+            first_angle = int(sheet.ProjectionMethod) == 0
+        except Exception:
+            first_angle = False
+        sign = -1.0 if first_angle else 1.0
         offsets = {
-            "right": (gap, 0.0), "left": (-gap, 0.0), "top": (0.0, gap),
-            "bottom": (0.0, -gap), "rear": (2 * gap, 0.0),
+            "right": (sign * gap, 0.0), "left": (-sign * gap, 0.0),
+            "top": (0.0, sign * gap), "bottom": (0.0, -sign * gap),
+            "rear": (2 * sign * gap, 0.0),
         }
         dx, dy = offsets[direction]
-        try:
-            px, py, pscale = float(parent.x), float(parent.y), float(parent.Scale)
-        except Exception:
-            px, py, pscale = 0.0, 0.0, 1.0
+        px, py, pscale = self._parent_placement(parent)
+
+        def define(view: Any) -> None:
+            view.GenerativeBehavior.DefineProjectionView(
+                parent.GenerativeBehavior, _PROJECTION_TYPES[direction]
+            )
+
+        view = self._create_derived_view(sheet, parent, args.get("name") or f"{direction} view", define)
         self._place(view, args.get("x", px + dx), args.get("y", py + dy), pscale)
-        gb.Update()
+        view.GenerativeBehavior.Update()
         self.conn.refresh_display()
+        method = "first angle" if first_angle else "third angle"
         return (
             f"Projection view '{view.Name}' ({direction}) of '{parent.Name}' "
-            f"added to sheet '{sheet.Name}' and updated."
+            f"added to sheet '{sheet.Name}' ({method} layout) and updated."
         )
 
     def _section_view(self, args: dict[str, Any]) -> str:
@@ -864,17 +913,23 @@ class DraftingTools:
         if profile_type not in ("Offset", "Aligned"):
             raise ValueError("profile_type must be 'Offset' or 'Aligned'")
         side = int(args.get("side", 1))
-        sheet, parent, view = self._derived_view(args, "section view")
-        gb = view.GenerativeBehavior
-        # DefineSectionView(iProfile, iSectionType, iProfileType, iSideToDraw,
-        # iParentGB); the profile is an input safearray, which marshals.
-        gb.DefineSectionView(profile, section_type, profile_type, side, parent.GenerativeBehavior)
-        try:
-            px, py, pscale = float(parent.x), float(parent.y), float(parent.Scale)
-        except Exception:
-            px, py, pscale = 0.0, 0.0, 1.0
+        if side not in (0, 1):
+            raise ValueError("side must be 0 (clockwise) or 1 (counterclockwise)")
+        drawing = self._find_active_drawing()
+        sheet = drawing.Sheets.ActiveSheet
+        parent = self._parent_generative_view(args.get("parent_view"))
+        px, py, pscale = self._parent_placement(parent)
+
+        def define(view: Any) -> None:
+            # DefineSectionView(iProfile, iSectionType, iProfileType,
+            # iSideToDraw, iParentGB); the profile is an input safearray.
+            view.GenerativeBehavior.DefineSectionView(
+                profile, section_type, profile_type, side, parent.GenerativeBehavior
+            )
+
+        view = self._create_derived_view(sheet, parent, args.get("name") or "section view", define)
         self._place(view, args.get("x", px + 150.0), args.get("y", py), pscale)
-        gb.Update()
+        view.GenerativeBehavior.Update()
         self.conn.refresh_display()
         return (
             f"{section_type} '{view.Name}' from '{parent.Name}' added to sheet "
@@ -883,23 +938,26 @@ class DraftingTools:
 
     def _detail_view(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
-        sheet, parent, view = self._derived_view(args, "detail view")
-        gb = view.GenerativeBehavior
-        gb.DefineCircularDetailView(
-            float(args["center_x"]), float(args["center_y"]), float(args["radius"]),
-            parent.GenerativeBehavior,
-        )
-        try:
-            px, py, pscale = float(parent.x), float(parent.y), float(parent.Scale)
-        except Exception:
-            px, py, pscale = 0.0, 0.0, 1.0
-        scale = float(args.get("scale", 2.0)) * pscale
-        self._place(view, args.get("x", px + 150.0), args.get("y", py + 100.0), scale)
-        gb.Update()
+        cx, cy, radius = float(args["center_x"]), float(args["center_y"]), float(args["radius"])
+        if radius <= 0:
+            raise ValueError("radius must be positive")
+        factor = float(args.get("scale", 2.0))
+        drawing = self._find_active_drawing()
+        sheet = drawing.Sheets.ActiveSheet
+        parent = self._parent_generative_view(args.get("parent_view"))
+        px, py, pscale = self._parent_placement(parent)
+
+        def define(view: Any) -> None:
+            view.GenerativeBehavior.DefineCircularDetailView(cx, cy, radius, parent.GenerativeBehavior)
+
+        view = self._create_derived_view(sheet, parent, args.get("name") or "detail view", define)
+        applied = self._place(view, args.get("x", px + 150.0), args.get("y", py + 100.0), factor * pscale)
+        view.GenerativeBehavior.Update()
         self.conn.refresh_display()
+        scale_note = f"scale {applied:g}" if applied else "scale unchanged (CATIA kept the parent scale)"
         return (
-            f"Detail view '{view.Name}' of '{parent.Name}' (r={args['radius']} mm at "
-            f"({args['center_x']}, {args['center_y']}), scale x{args.get('scale', 2.0)}) added."
+            f"Detail view '{view.Name}' of '{parent.Name}' (r={radius} mm at "
+            f"({cx}, {cy}), {scale_note}) added."
         )
 
     def _add_text(self, args: dict[str, Any]) -> str:

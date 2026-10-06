@@ -415,9 +415,9 @@ class PartDesignTools:
             {
                 "name": "catia_delete_feature",
                 "description": (
-                    "Delete a feature of the active body by name (e.g. "
-                    "'Pocket.2'), then update the part. Dependent features "
-                    "may be invalidated by CATIA."
+                    "Delete a feature by name (e.g. 'Pocket.2') in any body "
+                    "of the active part, then update the part. Features "
+                    "depending on it end up in error and are reported."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -1202,8 +1202,23 @@ class PartDesignTools:
     def _delete_feature(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
-        feature = self._get_last_shape(args["feature_name"])
-        name = str(feature.Name)
+        target = args["feature_name"]
+        feature = None
+        bodies = part.Bodies
+        for b in range(1, bodies.Count + 1):
+            shapes = bodies.Item(b).Shapes
+            for i in range(1, shapes.Count + 1):
+                shape = shapes.Item(i)
+                if str(shape.Name) == target:
+                    feature = shape
+                    break
+            if feature is not None:
+                break
+        if feature is None:
+            raise RuntimeError(
+                f"No feature named '{target}' in any body of the active part. "
+                "Use catia_list_features to see names."
+            )
         sel = self.conn.hso
         try:
             sel.Clear()
@@ -1214,9 +1229,17 @@ class PartDesignTools:
                 sel.Clear()
             except Exception:
                 pass
-        part.Update()
+        try:
+            part.Update()
+        except Exception as e:
+            self.conn.refresh_display()
+            return (
+                f"Feature '{target}' deleted, but the part update failed "
+                f"afterwards ({e}): features that depended on it are now "
+                "in error. Fix or delete them too."
+            )
         self.conn.refresh_display()
-        return f"Feature '{name}' deleted."
+        return f"Feature '{target}' deleted."
 
     def _list_features(self) -> str:
         self.conn.ensure_connected()
