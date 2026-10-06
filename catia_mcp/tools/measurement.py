@@ -21,6 +21,29 @@ _M2_TO_MM2 = 1e6
 _M3_TO_MM3 = 1e9
 
 
+def read_measurable_array(app: Any, measurable: Any, method: str, count: int) -> list[float]:
+    """Run `measurable.<method> a` inside CATIA via SystemService.Evaluate and
+    return the filled array (field-proven on V5R20 for GetCOG/GetPlane).
+
+    Coordinates returned this way (GetCOG, GetPoint, GetPlane) are observed in
+    the document's length unit (mm), unlike Area/Volume which are MKS.
+    """
+    code = (
+        "Public Function catia_mcp_out(measurable)\n"
+        f"    Dim a({count - 1})\n"
+        f"    measurable.{method} a\n"
+        "    catia_mcp_out = a\n"
+        "End Function\n"
+    )
+    result = app.SystemService.Evaluate(code, 0, "catia_mcp_out", [measurable])
+    values = [float(v) for v in result]
+    if len(values) != count:
+        raise RuntimeError(
+            f"{method} returned {len(values)} values, expected {count}"
+        )
+    return values
+
+
 class MeasurementTools:
     """Tools for measurement and analysis in CATIA V5."""
 
@@ -149,54 +172,38 @@ class MeasurementTools:
             case _:
                 raise ValueError(f"Unknown measurement tool: {tool_name}")
 
-    # In/out CATSafeArrayVariant parameters (GetCOG, GetPoint,
-    # GetInertiaMatrix) do not marshal through late-bound IDispatch: the
-    # Python list is passed by value and never mutated. The documented
-    # workaround (used by pycatia) is to run the array-filling call inside
-    # CATIA via SystemService.Evaluate and return the values as a string.
-    _VBS_COG = (
-        'Function GetCOGStr(oRef)\n'
-        '    Dim oSPA, oMeas\n'
-        '    Dim aCOG(2)\n'
-        '    Set oSPA = CATIA.ActiveDocument.GetWorkbench("SPAWorkbench")\n'
-        '    Set oMeas = oSPA.GetMeasurable(oRef)\n'
-        '    oMeas.GetCOG aCOG\n'
-        '    GetCOGStr = CStr(aCOG(0)) & ";" & CStr(aCOG(1)) & ";" & CStr(aCOG(2))\n'
-        'End Function'
-    )
-    _VBS_POINT = (
-        'Function GetPointStr(oRef)\n'
-        '    Dim oSPA, oMeas\n'
-        '    Dim aPt(2)\n'
-        '    Set oSPA = CATIA.ActiveDocument.GetWorkbench("SPAWorkbench")\n'
-        '    Set oMeas = oSPA.GetMeasurable(oRef)\n'
-        '    oMeas.GetPoint aPt\n'
-        '    GetPointStr = CStr(aPt(0)) & ";" & CStr(aPt(1)) & ";" & CStr(aPt(2))\n'
-        'End Function'
-    )
-    _VBS_INERTIA = (
-        'Function GetInertiaStr(oBody)\n'
-        '    Dim oSPA, oInertias, oInertia, i, sOut\n'
-        '    Dim aM(8)\n'
-        '    Set oSPA = CATIA.ActiveDocument.GetWorkbench("SPAWorkbench")\n'
-        '    Set oInertias = oSPA.Inertias\n'
-        '    Set oInertia = oInertias.Add(oBody)\n'
-        '    oInertia.GetInertiaMatrix aM\n'
-        '    sOut = CStr(oInertia.Mass)\n'
-        '    For i = 0 To 8\n'
-        '        sOut = sOut & ";" & CStr(aM(i))\n'
-        '    Next\n'
-        '    GetInertiaStr = sOut\n'
-        'End Function'
-    )
-
     def _evaluate_floats(self, script: str, func: str, params: list) -> list[float]:
-        """Run a VBScript function inside CATIA and parse its ;-joined floats.
+        """Run a VBScript function inside CATIA and return its array as floats.
 
-        CStr honors the Windows locale, so decimal commas are normalized.
+        In/out CATSafeArrayVariant parameters (GetCOG, GetPoint, GetPlane,
+        GetInertiaMatrix) do not marshal through late-bound IDispatch: the
+        Python list is passed by value and silently left untouched. The
+        R20-documented route (also used by pycatia, field-proven on V5R20)
+        is SystemService.Evaluate running a VBScript function that declares
+        the array locally and returns it.
         """
         raw = self.conn.app.SystemService.Evaluate(script, 0, func, params)
-        return [float(tok.replace(",", ".")) for tok in str(raw).split(";")]
+        return [float(v) for v in raw]
+
+    def _read_measurable_array(self, measurable: Any, method: str, count: int) -> list[float]:
+        """Call an array-filling Measurable method inside CATIA and return it."""
+        return read_measurable_array(self.conn.app, measurable, method, count)
+
+    _VBS_INERTIA = (
+        "Public Function catia_mcp_inertia(oBody)\n"
+        "    Dim oSPA, oInertia, i\n"
+        "    Dim m(8)\n"
+        "    Dim a(9)\n"
+        "    Set oSPA = CATIA.ActiveDocument.GetWorkbench(\"SPAWorkbench\")\n"
+        "    Set oInertia = oSPA.Inertias.Add(oBody)\n"
+        "    oInertia.GetInertiaMatrix m\n"
+        "    a(0) = oInertia.Mass\n"
+        "    For i = 0 To 8\n"
+        "        a(i + 1) = m(i)\n"
+        "    Next\n"
+        "    catia_mcp_inertia = a\n"
+        "End Function\n"
+    )
 
     def _spa_workbench(self) -> Any:
         """Get the SPAWorkbench measurement workbench.
@@ -270,7 +277,8 @@ class MeasurementTools:
         ref1 = self._resolve_reference(part, elem1_name)
         ref2 = self._resolve_reference(part, elem2_name)
 
-        # Measure (SPAWorkbench returns meters; convert to mm)
+        # Area/Volume are MKS (field-confirmed); the minimum distance is
+        # assumed MKS too and converted to mm. Not yet field-verified.
         measurable = spa.GetMeasurable(ref1)
         distance = measurable.GetMinimumDistance(ref2) * _M_TO_MM
 
@@ -303,11 +311,13 @@ class MeasurementTools:
             pass
 
         try:
-            cog = self._evaluate_floats(self._VBS_COG, "GetCOGStr", [ref])
+            # GetCOG coordinates come back in the document's length unit
+            # (mm), not MKS: field-observed on V5R20 for GetPlane/GetCOG.
+            cog = self._read_measurable_array(measurable, "GetCOG", 3)
             result["center_of_gravity_mm"] = {
-                "x": round(cog[0] * _M_TO_MM, 4),
-                "y": round(cog[1] * _M_TO_MM, 4),
-                "z": round(cog[2] * _M_TO_MM, 4),
+                "x": round(cog[0], 4),
+                "y": round(cog[1], 4),
+                "z": round(cog[2], 4),
             }
         except Exception as e:
             result["center_of_gravity_mm"] = f"unavailable: {e}"
@@ -321,7 +331,7 @@ class MeasurementTools:
         try:
             # Inertia data lives on the SPAWorkbench Inertia object, not on
             # Measurable (Measurable.GetInertia does not exist in V5).
-            vals = self._evaluate_floats(self._VBS_INERTIA, "GetInertiaStr", [body])
+            vals = self._evaluate_floats(self._VBS_INERTIA, "catia_mcp_inertia", [body])
             result["mass_from_material_kg"] = round(vals[0], 6)
             inertia = vals[1:10]
             result["inertia_matrix_kg_m2"] = [
@@ -369,12 +379,14 @@ class MeasurementTools:
             except Exception:
                 pass
 
+        spa = self._spa_workbench()
         xs, ys, zs = [], [], []
         for ref in refs:
-            pt = self._evaluate_floats(self._VBS_POINT, "GetPointStr", [ref])
-            xs.append(pt[0] * _M_TO_MM)
-            ys.append(pt[1] * _M_TO_MM)
-            zs.append(pt[2] * _M_TO_MM)
+            # Vertex coordinates in the document's length unit (mm).
+            pt = self._read_measurable_array(spa.GetMeasurable(ref), "GetPoint", 3)
+            xs.append(pt[0])
+            ys.append(pt[1])
+            zs.append(pt[2])
 
         result = {
             "min": {"x": round(min(xs), 4), "y": round(min(ys), 4), "z": round(min(zs), 4)},

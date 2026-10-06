@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- **Dimensioning generative views the way CATIA actually allows it** (87
+  tools total). A V5R20 live lab established that generated projection
+  curves are never exposed to Automation (GeometricElements shows only
+  the axis and manual 2D items), so `catia_drawing_generate_dimensions`
+  implements the proven route: one associative dimension per supported 3D
+  sketch constraint via DrawingSheet.GenerateDimensions, with the drawing
+  activated first (otherwise CATIA silently does nothing) and a dimension
+  count postcondition. `catia_drawing_list_dimensions` reports values and
+  status (basic_2d vs 3d_driven). The manual tools are rescoped to
+  Factory2D geometry and CatDimType codes corrected to the 0-based enum
+  (radius = 5 verified live).
+- `catia_drawing_add_view` gains face-driven projection (`face`: the view
+  is projected on a planar face's own plane via Measurable.GetPlane and
+  SetProjectionPlane with the two in-plane vectors, orientation-independent)
+  and `angle` for in-plane rotation. Field-proven on a real industrial part.
+- Shared `read_measurable_array` helper: array-filling Measurable methods
+  (GetCOG, GetPoint, GetPlane) run inside CATIA via SystemService.Evaluate
+  and return the array directly; coordinates come back in the document's
+  length unit (mm), so center of gravity and bounding-box vertices are no
+  longer scaled.
 - **`catia_user_pattern`** (85 tools total): copies of a feature placed on
   the points of a sketch, via AddNewUserPattern + AddFeatureToLocatePositions.
   Field-validated on V5R20 (4 copies measured on their sketch points plus the seed).

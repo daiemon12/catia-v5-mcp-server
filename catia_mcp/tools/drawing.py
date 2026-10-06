@@ -13,9 +13,11 @@ and title blocks are planned follow-ups.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.tools.measurement import read_measurable_array
 
 # DefineFrontView takes the two sheet-plane axis vectors expressed in the
 # 3D part's coordinate system.
@@ -50,13 +52,13 @@ class DraftingTools:
             {
                 "name": "catia_drawing_list_view_geometry",
                 "description": (
-                    "List the 2D geometry of a drawing view as indexed "
-                    "elements for catia_drawing_add_dimension. Caution: a "
-                    "V5R20 field report measured GeometricElements.Count = 1 "
-                    "on generative views, so projected geometry may not be "
-                    "itemized there (under validation); interactive 2D "
-                    "geometry lists normally. Defaults to the last view of "
-                    "the active sheet."
+                    "List the manually drawn 2D geometry of a drawing view "
+                    "as indexed elements for catia_drawing_add_dimension. "
+                    "Field-proven on V5R20: generated projection curves are "
+                    "NOT exposed here (GeometricElements shows only the axis "
+                    "and Factory2D items). To dimension generative views use "
+                    "catia_drawing_generate_dimensions. Defaults to the last "
+                    "view of the active sheet."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -71,12 +73,11 @@ class DraftingTools:
             {
                 "name": "catia_drawing_add_dimension",
                 "description": (
-                    "Add a dimension to a drawing view between one or two "
-                    "indexed 2D elements from "
-                    "catia_drawing_list_view_geometry. The dimension value "
-                    "is associative (computed by CATIA from the geometry). "
-                    "Experimental: CatDimType codes follow the R20 "
-                    "reference and await live validation."
+                    "Add a dimension between one or two manually drawn 2D "
+                    "elements (indices from catia_drawing_list_view_geometry). "
+                    "Works on Factory2D geometry only (R20: generated curves "
+                    "are not addressable); for generative views use "
+                    "catia_drawing_generate_dimensions."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -103,6 +104,44 @@ class DraftingTools:
                         },
                     },
                     "required": ["type", "element_index_1"],
+                },
+            },
+            {
+                "name": "catia_drawing_generate_dimensions",
+                "description": (
+                    "Generate associative dimensions on a generative view "
+                    "from the part's 3D sketch constraints (one dimension per "
+                    "distance/length/angle/radius/diameter constraint). This "
+                    "is the only route that dimensions generated geometry in "
+                    "CATIA V5 (field-proven on R20): add constraints with "
+                    "catia_sketch_constraint, then call this. Reports the "
+                    "dimensions with values; generated ones follow the 3D "
+                    "model (status 3d_driven)."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "view_name": {
+                            "type": "string",
+                            "description": "Target view (default: last view of the active sheet)",
+                        },
+                    },
+                },
+            },
+            {
+                "name": "catia_drawing_list_dimensions",
+                "description": (
+                    "List the dimensions of a drawing view with their values "
+                    "and status (basic_2d or 3d_driven)."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "view_name": {
+                            "type": "string",
+                            "description": "View to inspect (default: last view of the active sheet)",
+                        },
+                    },
                 },
             },
             {
@@ -137,7 +176,21 @@ class DraftingTools:
                         "plane": {
                             "type": "string",
                             "enum": ["xy", "yz", "zx"],
-                            "description": "Projection plane (default xy)",
+                            "description": "Projection plane (default xy); ignored when 'face' is given",
+                        },
+                        "face": {
+                            "type": "string",
+                            "description": (
+                                "Face-driven projection: 'Face.N' of the "
+                                "body's final shape (see catia_list_faces); "
+                                "the view is projected on that planar face's "
+                                "own plane, orientation-independent. "
+                                "Field-proven on V5R20."
+                            ),
+                        },
+                        "angle": {
+                            "type": "number",
+                            "description": "In-plane rotation of the view in degrees (default 0)",
                         },
                         "x": {
                             "type": "number",
@@ -162,6 +215,10 @@ class DraftingTools:
                 return self._new_drawing()
             case "catia_drawing_add_view":
                 return self._add_view(arguments)
+            case "catia_drawing_generate_dimensions":
+                return self._generate_dimensions(arguments)
+            case "catia_drawing_list_dimensions":
+                return self._list_dimensions(arguments)
             case "catia_drawing_list_view_geometry":
                 return self._list_view_geometry(arguments)
             case "catia_drawing_add_dimension":
@@ -244,6 +301,10 @@ class DraftingTools:
 
         gb = view.GenerativeBehavior
         body_name = args.get("body_name")
+        face_name = args.get("face")
+        face_plane = None
+        if face_name:
+            face_plane = self._face_plane(part_doc, body_name, face_name)
         if body_name:
             # gb.Document accepts a Body and then draws that body only
             # (field-validated with a control view on V5R20).
@@ -261,26 +322,43 @@ class DraftingTools:
         else:
             gb.Document = part_doc
             source = str(part_doc.Name)
-        gb.DefineFrontView(vx1, vy1, vz1, vx2, vy2, vz2)
+        if face_plane is not None:
+            # SetProjectionPlane takes the two in-plane direction vectors
+            # (normal = V1 x V2), field-corrected and proven on V5R20.
+            gb.SetProjectionPlane(
+                face_plane[3], face_plane[4], face_plane[5],
+                face_plane[6], face_plane[7], face_plane[8],
+            )
+            projection = f"plane of {face_name}"
+        else:
+            gb.DefineFrontView(vx1, vy1, vz1, vx2, vy2, vz2)
+            projection = f"{plane.upper()} projection"
 
         view.x = args.get("x", 300)
         view.y = args.get("y", 150)
+        angle = args.get("angle")
+        if angle:
+            import math as _math
+
+            view.Angle = _math.radians(angle)
         gb.Update()
 
         self.conn.refresh_display()
         return (
             f"View '{view.Name}' of '{source}' added to sheet "
-            f"'{sheet.Name}' ({plane.upper()} projection) and updated."
+            f"'{sheet.Name}' ({projection}) and updated."
         )
 
-    # CatDimType codes from the R20 automation reference (live validation
-    # pending): auto=0, distance=1, length=2, angle=3, radius=4, diameter=5.
+    # CatDimType is 0-based in R20 (enum_CatDimType, 21 values, verified
+    # live: catDimRadius = 5): Distance=0, DistanceOffset=1, Length=2,
+    # LengthCurvilinear=3, Angle=4, Radius=5, RadiusTangent=6,
+    # RadiusCylinder=7, RadiusEdge=8, Diameter=9, ...
     _DIM_TYPES = {
-        "distance": 1,
+        "distance": 0,
         "length": 2,
-        "angle": 3,
-        "radius": 4,
-        "diameter": 5,
+        "angle": 4,
+        "radius": 5,
+        "diameter": 9,
     }
 
     def _find_view(self, view_name: str | None) -> Any:
@@ -358,4 +436,121 @@ class DraftingTools:
         return (
             f"{dim_type.capitalize()} dimension '{dim.Name}' added on view "
             f"'{view.Name}' (associative value computed by CATIA)."
+        )
+
+    def _face_plane(self, part_doc: Any, body_name: str | None, face_name: str) -> list[float]:
+        """Return the 9 GetPlane components (origin, dir1, dir2) of Face.N of
+        the body's final shape, through the SystemService.Evaluate detour."""
+        m = re.match(r"^Face\.(\d+)$", face_name or "")
+        if not m:
+            raise ValueError(f"'face' must look like 'Face.3' (from catia_list_faces), got '{face_name}'.")
+        idx = int(m.group(1))
+        part = part_doc.Part
+        body = part.Bodies.Item(body_name) if body_name else part.MainBody
+        if body.Shapes.Count == 0:
+            raise RuntimeError("The body has no solid shape to take a face from.")
+        last_shape = body.Shapes.Item(body.Shapes.Count)
+        sel = part_doc.Selection
+        try:
+            sel.Clear()
+            sel.Add(last_shape)
+            sel.Search("Topology.Face,sel")
+            if idx < 1 or idx > sel.Count:
+                raise RuntimeError(
+                    f"{face_name} is out of range: the final shape exposes "
+                    f"{sel.Count} face(s)."
+                )
+            ref = sel.Item(idx).Reference
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
+        spa = part_doc.GetWorkbench("SPAWorkbench")
+        measurable = spa.GetMeasurable(ref)
+        plane = read_measurable_array(self.conn.app, measurable, "GetPlane", 9)
+        if not any(abs(v) > 0 for v in plane):
+            raise RuntimeError(
+                f"{face_name} returned no usable plane (not planar?). Pick a "
+                "planar face."
+            )
+        return plane
+
+    def _dimension_rows(self, view: Any) -> list[dict[str, Any]]:
+        rows = []
+        dims = view.Dimensions
+        for j in range(1, dims.Count + 1):
+            d = dims.Item(j)
+            row: dict[str, Any] = {"name": str(d.Name)}
+            try:
+                row["value"] = round(float(d.GetValue().Value), 4)
+            except Exception:
+                row["value"] = None
+            try:
+                row["dim_type"] = int(d.DimType)
+            except Exception:
+                pass
+            try:
+                # 6 = catBasic (manual 2D parents), 7 = cat3DDrivableDim
+                # (generated from a 3D constraint, follows the part).
+                status = int(d.DimStatus)
+                row["status"] = {6: "basic_2d", 7: "3d_driven"}.get(status, status)
+            except Exception:
+                pass
+            rows.append(row)
+        return rows
+
+    def _generate_dimensions(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        drawing = self._find_active_drawing()
+        view = self._find_view(args.get("view_name"))
+        before = view.Dimensions.Count
+
+        # Field-proven on V5R20: DrawingSheet.GenerateDimensions() is a
+        # silent no-op unless the DRAWING is the active document and the
+        # view is active. One dimension per supported 3D constraint
+        # (distance/length/angle/radius/diameter), idempotent on re-run.
+        try:
+            drawing.Activate()
+        except Exception:
+            pass
+        try:
+            view.Activate()
+        except Exception:
+            pass
+        sheet = drawing.Sheets.ActiveSheet
+        sheet.GenerateDimensions()
+        self.conn.refresh_display()
+
+        after = view.Dimensions.Count
+        rows = self._dimension_rows(view)
+        created = max(0, after - before)
+        import json as _json
+
+        if created == 0:
+            return _json.dumps({
+                "view": str(view.Name),
+                "generated": 0,
+                "dimensions": rows,
+                "note": (
+                    "No dimension was generated. Causes: the part's sketches "
+                    "carry no supported constraints (use "
+                    "catia_sketch_constraint: distance, length/radius, angle), "
+                    "or they were already generated (idempotent)."
+                ),
+            }, indent=2)
+        return _json.dumps({
+            "view": str(view.Name),
+            "generated": created,
+            "dimensions": rows,
+        }, indent=2)
+
+    def _list_dimensions(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        view = self._find_view(args.get("view_name"))
+        import json as _json
+
+        return _json.dumps(
+            {"view": str(view.Name), "dimensions": self._dimension_rows(view)},
+            indent=2,
         )
