@@ -48,6 +48,12 @@ This MCP server exposes **98 tools** that let an AI agent:
   the same mm coordinate convention). The inertia matrix (Inertia object)
   and the vertex-sweep bounding box await live confirmation.
 - **V5-6 2020**: full tool surface in active use by contributors.
+- **Working alongside the agent**: a contributor reports dimensioning and
+  testing by hand in the same CATIA session while an agent runs tools in
+  the background, for a whole night, without conflicts. The automation
+  layer is nearly invisible to the interactive user. The one thing to
+  avoid is switching the active document while a tool call is in flight,
+  since most tools resolve "the active document" at call time.
 
 `catia_measure_distance` accepts tree names (`Pad.1`, `Sketch.2`) and indexed
 topology (`Face.N` / `Edge.N` from `catia_list_faces` / `catia_list_edges`).
