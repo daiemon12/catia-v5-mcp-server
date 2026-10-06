@@ -1,3 +1,3 @@
-"""CATIA V5 MCP Server - Connect Claude AI to Dassault Systèmes CATIA V5."""
+"""CATIA V5 MCP Server - connect MCP-compatible AI agents to Dassault Systèmes CATIA V5."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.2"

@@ -435,12 +435,20 @@ class PartDesignTools:
             {
                 "name": "catia_list_faces",
                 "description": (
-                    "List the faces of the final solid shape as indexed names "
-                    "(Face.N) for use with catia_measure_distance."
+                    "List the faces of a body's final solid shape as indexed "
+                    "names (Face.N) for catia_measure_distance, shell, draft, "
+                    "thickness and face-driven drawing views. Defaults to the "
+                    "main body; pass body_name to enumerate another body "
+                    "(use the same body_name in catia_drawing_add_view)."
                 ),
                 "inputSchema": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "body_name": {
+                            "type": "string",
+                            "description": "Body to enumerate (default: the part's main body)",
+                        },
+                    },
                 },
             },
         ]
@@ -478,7 +486,7 @@ class PartDesignTools:
             case "catia_list_features":
                 return self._list_features()
             case "catia_list_faces":
-                return self._list_faces()
+                return self._list_faces(arguments.get("body_name"))
             case "catia_list_edges":
                 return self._list_edges()
             case _:
@@ -1189,9 +1197,20 @@ class PartDesignTools:
             return "No features in the active body"
         return json.dumps(features, indent=2)
 
-    def _list_faces(self) -> str:
+    def _list_faces(self, body_name: str | None = None) -> str:
         self.conn.ensure_connected()
-        body = self.conn.get_active_part_body()
+        if body_name:
+            part = self.conn.get_active_part()
+            bodies = part.Bodies
+            try:
+                body = bodies.Item(body_name)
+            except Exception:
+                names = ", ".join(str(bodies.Item(i).Name) for i in range(1, bodies.Count + 1))
+                raise RuntimeError(
+                    f"No body named '{body_name}'. Top-level bodies: {names or 'none'}."
+                )
+        else:
+            body = self.conn.get_active_part_body()
 
         faces = []
         try:

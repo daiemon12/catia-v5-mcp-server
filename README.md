@@ -42,9 +42,10 @@ This MCP server exposes **87 tools** that let an AI agent:
   missing turned out to be a **stale pywin32 `gen_py` cache**, not the
   release: clearing the cache restored the methods (see Troubleshooting).
   Measurement notes for R20: volume, area and parameters work directly;
-  center of gravity, the inertia matrix and the bounding box now go
-  through documented routes (SystemService.Evaluate detour, Inertia
-  object, vertex sweep) that await live confirmation there.
+  array-returning measures go through the SystemService.Evaluate detour
+  (proven there for GetPlane; GetCOG and GetPoint use the same route and
+  the same mm coordinate convention). The inertia matrix (Inertia object)
+  and the vertex-sweep bounding box await live confirmation.
 - **V5-6 2020**: full tool surface in active use by contributors.
 
 `catia_measure_distance` accepts tree names (`Pad.1`, `Sketch.2`) and indexed

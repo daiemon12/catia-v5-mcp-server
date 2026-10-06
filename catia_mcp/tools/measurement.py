@@ -369,7 +369,8 @@ class MeasurementTools:
                     "vertices (fully curved solid); a bounding box cannot be "
                     "derived through the V5 automation API."
                 )
-            if count > 200:
+            truncated = count > 200
+            if truncated:
                 count = 200  # cap the sweep; stated in the output below
             for i in range(1, count + 1):
                 refs.append(sel.Item(i).Reference)
@@ -400,7 +401,7 @@ class MeasurementTools:
                 f"vertex sweep over {len(refs)} vertices of the final shape; "
                 "exact for planar-faced solids, curved faces may extend "
                 "beyond these bounds"
-                + (" (vertex count capped at 200)" if len(refs) == 200 else "")
+                + (" (vertex count capped at 200)" if truncated else "")
             ),
         }
         return json.dumps(result, indent=2)

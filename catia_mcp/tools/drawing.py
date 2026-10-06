@@ -5,10 +5,13 @@ contributor ESE3X: Drawing document creation, generative view
 creation (Sheets / Views.Add / GenerativeBehavior / DefineFrontView /
 Update) and view positioning are confirmed working through COM.
 
-The dimensioning tools follow the MCP philosophy: the AI agent decides
-where dimensions belong (list the view's 2D geometry, pick elements),
-the server only executes the mechanical Add. Projection/section views
-and title blocks are planned follow-ups.
+Dimensioning: CATIA never exposes the projected curves of generative
+views to Automation (field-proven on V5R20), so generative views are
+dimensioned from the part's 3D sketch constraints through
+DrawingSheet.GenerateDimensions (the agent expresses design intent as
+constraints, CATIA places the dimensions). The manual Add path only
+works on 2D geometry drawn in the view. Section views and title blocks
+are planned follow-ups.
 """
 
 from __future__ import annotations
@@ -132,7 +135,9 @@ class DraftingTools:
                 "name": "catia_drawing_list_dimensions",
                 "description": (
                     "List the dimensions of a drawing view with their values "
-                    "and status (basic_2d or 3d_driven)."
+                    "and status (basic_2d or 3d_driven). Regenerates the view "
+                    "first so 3d_driven values reflect the current part "
+                    "(set refresh=false to skip)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -140,6 +145,10 @@ class DraftingTools:
                         "view_name": {
                             "type": "string",
                             "description": "View to inspect (default: last view of the active sheet)",
+                        },
+                        "refresh": {
+                            "type": "boolean",
+                            "description": "Regenerate the view before reading (default true)",
                         },
                     },
                 },
@@ -182,7 +191,8 @@ class DraftingTools:
                             "type": "string",
                             "description": (
                                 "Face-driven projection: 'Face.N' of the "
-                                "body's final shape (see catia_list_faces); "
+                                "body's final shape, as listed by "
+                                "catia_list_faces run with the SAME body_name; "
                                 "the view is projected on that planar face's "
                                 "own plane, orientation-independent. "
                                 "Field-proven on V5R20."
@@ -288,6 +298,7 @@ class DraftingTools:
 
     def _add_view(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
+        app = self.conn.app
         part_doc = self._find_part_document(args.get("part_name"))
         drawing = self._find_active_drawing()
 
@@ -296,18 +307,11 @@ class DraftingTools:
             raise ValueError(f"Unknown plane '{plane}'. Use 'xy', 'yz', or 'zx'.")
         vx1, vy1, vz1, vx2, vy2, vz2 = _PLANE_VECTORS[plane]
 
-        sheet = drawing.Sheets.ActiveSheet
-        view = sheet.Views.Add(args.get("name") or "Front View")
-
-        gb = view.GenerativeBehavior
+        # Resolve every input before touching the sheet, so a bad argument
+        # never leaves an empty unconfigured view behind.
         body_name = args.get("body_name")
-        face_name = args.get("face")
-        face_plane = None
-        if face_name:
-            face_plane = self._face_plane(part_doc, body_name, face_name)
+        target_body = None
         if body_name:
-            # gb.Document accepts a Body and then draws that body only
-            # (field-validated with a control view on V5R20).
             bodies = part_doc.Part.Bodies
             try:
                 target_body = bodies.Item(body_name)
@@ -317,6 +321,31 @@ class DraftingTools:
                     f"No body named '{body_name}' in '{part_doc.Name}'. "
                     f"Top-level bodies: {names or 'none'}."
                 )
+        face_name = args.get("face")
+        face_plane = None
+        if face_name:
+            # Face enumeration and GetPlane run with the PART active, as in
+            # the proven run; the drawing is re-activated afterwards.
+            try:
+                part_doc.Activate()
+            except Exception:
+                pass
+            try:
+                face_plane = self._face_plane(part_doc, body_name, face_name)
+            finally:
+                try:
+                    drawing.Activate()
+                except Exception:
+                    pass
+        angle = args.get("angle")
+
+        sheet = drawing.Sheets.ActiveSheet
+        view = sheet.Views.Add(args.get("name") or "Front View")
+
+        gb = view.GenerativeBehavior
+        if target_body is not None:
+            # gb.Document accepts a Body and then draws that body only
+            # (field-validated with a control view on V5R20).
             gb.Document = target_body
             source = f"{part_doc.Name} / {body_name}"
         else:
@@ -336,7 +365,6 @@ class DraftingTools:
 
         view.x = args.get("x", 300)
         view.y = args.get("y", 150)
-        angle = args.get("angle")
         if angle:
             import math as _math
 
@@ -427,10 +455,15 @@ class DraftingTools:
 
         # DrawingDimensions.Add(iTypeDim, iGeomElem, iPtCoordElem, iLineRep).
         # Input safearrays marshal fine through late-bound COM (only in/out
-        # arrays do not). Selection points zeroed: CATIA anchors on the
-        # geometry; placement can be adjusted interactively.
+        # arrays do not). Field-proven form on V5R20: view activated first,
+        # zeroed selection points, iLineRep = 3 (catDimAuto, CATIA places
+        # the dimension line).
+        try:
+            view.Activate()
+        except Exception:
+            pass
         pt_coords = [0.0] * (2 * len(elems))
-        dim = view.Dimensions.Add(code, elems, pt_coords, 0)
+        dim = view.Dimensions.Add(code, elems, pt_coords, 3)
 
         self.conn.refresh_display()
         return (
@@ -468,7 +501,13 @@ class DraftingTools:
                 pass
         spa = part_doc.GetWorkbench("SPAWorkbench")
         measurable = spa.GetMeasurable(ref)
-        plane = read_measurable_array(self.conn.app, measurable, "GetPlane", 9)
+        try:
+            plane = read_measurable_array(self.conn.app, measurable, "GetPlane", 9)
+        except Exception as e:
+            raise RuntimeError(
+                f"{face_name} has no plane (GetPlane failed: {e}). Only "
+                "planar faces can drive a projection; pick another face."
+            )
         if not any(abs(v) > 0 for v in plane):
             raise RuntimeError(
                 f"{face_name} returned no usable plane (not planar?). Pick a "
@@ -510,6 +549,7 @@ class DraftingTools:
         # silent no-op unless the DRAWING is the active document and the
         # view is active. One dimension per supported 3D constraint
         # (distance/length/angle/radius/diameter), idempotent on re-run.
+        app = self.conn.app
         try:
             drawing.Activate()
         except Exception:
@@ -519,6 +559,23 @@ class DraftingTools:
         except Exception:
             pass
         sheet = drawing.Sheets.ActiveSheet
+        active_doc = str(app.ActiveDocument.Name)
+        if active_doc != str(drawing.Name):
+            raise RuntimeError(
+                f"Could not activate drawing '{drawing.Name}' (active "
+                f"document is '{active_doc}'); GenerateDimensions would "
+                "silently do nothing. Bring the drawing window to front and "
+                "retry."
+            )
+        try:
+            active_view = str(sheet.Views.ActiveView.Name)
+        except Exception:
+            active_view = None
+        if active_view is not None and active_view != str(view.Name):
+            raise RuntimeError(
+                f"Could not activate view '{view.Name}' (active view is "
+                f"'{active_view}'); retry or pass view_name explicitly."
+            )
         sheet.GenerateDimensions()
         self.conn.refresh_display()
 
@@ -548,6 +605,14 @@ class DraftingTools:
     def _list_dimensions(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         view = self._find_view(args.get("view_name"))
+        # 3d_driven dimensions only follow the part after the generative
+        # view is regenerated (field-proven: part.Update alone leaves the
+        # old value). Refresh before reading.
+        if args.get("refresh", True):
+            try:
+                view.GenerativeBehavior.Update()
+            except Exception:
+                pass
         import json as _json
 
         return _json.dumps(

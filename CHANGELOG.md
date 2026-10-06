@@ -48,16 +48,21 @@ All notable changes to this project are documented here.
   creates a CATDrawing and `catia_drawing_add_view` projects an open Part
   as a generative front view (xy/yz/zx) on the active sheet, built from
   automation probes field-validated on CATIA V5R20 by contributor
-  ESE3X. Dimensioning follows the MCP philosophy (the agent decides where
-  dimensions belong): `catia_drawing_list_view_geometry` exposes a view's
-  projected 2D geometry as indexed elements and
-  `catia_drawing_add_dimension` places associative dimensions
-  (distance/length/angle/radius/diameter) between them via
-  DrawingDimensions.Add. Projection/section views and title blocks are
-  planned follow-ups.
+  ESE3X. `catia_drawing_list_view_geometry` lists a view's manually drawn
+  2D geometry and `catia_drawing_add_dimension` places dimensions between
+  such elements via DrawingDimensions.Add (generated curves are not
+  addressable, see the generate_dimensions entry above). Section views
+  and title blocks are planned follow-ups.
 - README repositioned as agent-agnostic: per-client MCP setup for Claude
   Desktop/Code, Cursor, Windsurf, Cline, VS Code and generic stdio hosts,
   plus release/CI/license badges.
+
+### Fixed
+- **Center of gravity and bounding-box coordinates were scaled by 1000**:
+  GetCOG/GetPoint/GetPlane return coordinates in the document's length
+  unit (mm, field-observed on V5R20 via GetPlane on a real part), unlike
+  Area/Volume which are MKS. The 0.2.2 conversion multiplied them by
+  1000; removed.
 
 ## [0.2.2] — 2026-10-04
 
