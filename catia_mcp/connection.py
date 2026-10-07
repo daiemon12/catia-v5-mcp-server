@@ -7,6 +7,7 @@ Supports connecting to a running instance or launching a new one.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("catia_mcp")
@@ -98,6 +99,43 @@ class CATIAConnection:
                 pass
             self._initialized_com = False
         return "Disconnected from CATIA V5"
+
+    def attach_caa(self, expected_pid: int) -> Any:
+        """Attach only to one verified existing CNEXT, reusing this connection.
+
+        Called on the same STA worker as every other COM operation. Native CAA
+        additionally verifies exact PID and active document before mutation.
+        """
+        if not HAS_COM:
+            raise RuntimeError("CAA requires Windows, pywin32 and an existing CATIA instance")
+        import win32api
+        import win32con
+        import win32process
+        import pywintypes
+
+        pids = []
+        for pid in win32process.EnumProcesses():
+            handle = None
+            try:
+                handle = win32api.OpenProcess(
+                    win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid
+                )
+                if Path(win32process.GetModuleFileNameEx(handle, 0)).name.casefold() == "cnext.exe":
+                    pids.append(pid)
+            except (OSError, pywintypes.error):
+                continue
+            finally:
+                if handle is not None:
+                    win32api.CloseHandle(handle)
+        if pids != [expected_pid]:
+            raise ValueError(f"Exactly one CNEXT matching PID {expected_pid} is required; found {pids}")
+        if not self._initialized_com:
+            pythoncom.CoInitialize()
+            self._initialized_com = True
+        if self.app is None:
+            self.app = win32com.client.GetActiveObject(self.CATIA_PROGID)
+        self.app.Documents.Count
+        return self.app
 
     def ensure_connected(self) -> None:
         """Ensure we have an active CATIA connection, connecting if needed."""

@@ -12,3 +12,24 @@ venv/
 # GSD smoke test outputs
 GSD_SmokeTest*.CATPart
 gsd_smoke_test.jpg
+
+# Local CAA configuration and generated build/runtime artifacts
+caa/point_bridge/caa_workspace/Install_config_win_b64
+caa/point_bridge/caa_workspace/win_b64/
+caa/point_bridge/caa_workspace/LocalGenerated/
+caa/point_bridge/env/
+*.dll
+*.obj
+caa/point_bridge/caa_workspace/CATEnv/
+caa/point_bridge/caa_workspace/**/Objects/
+caa/point_bridge/caa_workspace/**/LocalGenerated/
+caa/point_bridge/caa_workspace/**/win_b64/
+
+# Source-only contribution: runtime outputs and binary models stay local.
+*.CATPart
+*.pdb
+*.lib
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/code/bin/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/code/productIC/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/resources/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/runtime.json

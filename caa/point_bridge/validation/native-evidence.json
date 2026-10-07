@@ -1,0 +1,149 @@
+{
+  "business_methods": [
+    "catia_caa_demo_create_point"
+  ],
+  "source_head": "214c4d90b2b3dad91317090aede42e9f8a09aa3d",
+  "source_dirty": true,
+  "source_branch": "codex/caa-point-mcp-demo-20261007",
+  "toolchain": "B30 mkmk 5.30.0.19283; VS2017 MSVC 14.16.27023; win_b64",
+  "original_build_command": "cmd /c scripts\\build_caa_b30.bat",
+  "artifact_kind": "Uncommitted Point-only development build; not a formal release",
+  "native_source_files": {
+    "CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/Imakefile.mk": "4703d9653bf037d190e1783db92408815feadb15627c37a59cd9e171cea3f06c",
+    "CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/LocalInterfaces/CatiaPyBridgeAddin.h": "2ac0cb2486c267aba6811fc0481711d35c7207ae5acd96ed728eefbf30fcdff5",
+    "CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/src/CatiaPyBridgeAddin.cpp": "393f7b4dfba3a53046f2688fd955f26a1005b36b362dd3ceac4c6398e08980c1",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/Imakefile.mk": "b08bafbe232f177d01e5ffb637988fa9328f20b33f45171f6320ee3b723cfc6f",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeCore.h": "02df5d925c37eabf4967a7eaf148ee9eab6c6fedda4437063928fdcb2a391388",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeFileBridge.h": "832d14c39bb97d213f0843e58809ecf1b1818dec7a438a7f269e63963df6440d",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeJson.h": "34a7f789953f0aff7f32eb73c69a4de057a15d5ae6af995df72d928d01cf66d4",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeLogger.h": "d2dd513ccef7b1a61e1c4246c61d151164e85def3e134586bea964bbd0e68e53",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgePointDemo.h": "fcb6d7ddd0c96c2b1feae752c970bfdc675c0c2602a4dcbb7204f53f92b1a796",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeRequest.h": "2f58a78b1b1d1a0cd167ff947bd849063c179904acc7fc0bf9de26ed56450cc2",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeResponse.h": "8cc29993e3372979344d73b5b7ee4e60e7d3da9166d1df698f8b0994282be683",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeRunOnceCommand.h": "d29f2df0b880e8143f6c82e61acf3e5ba2c4a5d23df6965b92d2ed02a287106b",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeCore.cpp": "83667ff64535ab93830e5af808b0464f7d7ac5d4318f69447777b08b5b6841fd",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeFileBridge.cpp": "c7f9ecd066b184c4f4dd364951521d6db4303bbedbb642228cc785dde143eef2",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeJson.cpp": "2f02efb05e0a4ea315c88e7324fb482f058da0487ea1b3b86a3e9be2fb5f1433",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeLogger.cpp": "38eed0b0e5353c3771ca1ecc30fbbe3b967e643ccb9877c6151d4fc00c4df8b3",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgePointDemo.cpp": "c5516f1a164cdb41661521fba787e5dfc3e125df0430967ee663003d4455dece",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeRequest.cpp": "e3deedf96292ade0d53f8fd688783dca535d49946e4cf308d1bef8ecfa8d7edf",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeResponse.cpp": "afd4a44c58099fe83e01437b67298754da2870016dc621402361bb29dc7720ea",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeRunOnceCommand.cpp": "f114740a36e1d23d6704aaadddb7bb46be7e4ca1c62dff1ba53bed3d1f82cf06",
+    "CatiaPyBridgeFramework/CNext/resources/msgcatalog/CatiaPyBridgeAddin.CATNls": "bc40e0225c2c25dcc3c47ffea9d7a2ebc066a4defdf20fbf823535cc67e6667b",
+    "CatiaPyBridgeFramework/CNext/resources/msgcatalog/CatiaPyBridgeCommandHeader.CATNls": "b54ee830030cee88fadce8bf4585b1a3da154d7b521c928b5749179cd9d3470f",
+    "CatiaPyBridgeFramework/IdentityCard/IdentityCard.xml": "ed8d08c638cf3c7d9c9877f08b5b9fc1fde9cd7c378e96eb614d142f2d647432",
+    "CatiaPyBridgeFramework/various/DOC/framework.data": "354c967c080caff8df50c8d1e543b44a73e517740bd9cf55b3c07778eba5e39f"
+  },
+  "original_runtime_sha256": {
+    "code/bin/CatiaPyBridgeAddin.dll": "adf8be0e594dbff0410cd54125dfcbc8cee1d3e94c2db1cc0839e535ef5e3093",
+    "code/bin/CatiaPyBridgeCmdModule.dll": "65ffdd366b4ac0a418e1c4e400006b2936af0b36d8131f25db59266a57e82b68",
+    "code/dictionary/CatiaPyBridge.dico": "fb1dda787788c81b6cac640099f18d0db282b59b71b26be3a2ddeae5e5670e4e",
+    "code/productIC/CatiaPyBridgeFrameworkIC.xml": "3648aaab0ddbd6f2097f3e99fa66d0c453b19af8c212459951cf0fb809d51f1e",
+    "resources/msgcatalog/CatiaPyBridgeAddin.CATNls": "bc40e0225c2c25dcc3c47ffea9d7a2ebc066a4defdf20fbf823535cc67e6667b",
+    "resources/msgcatalog/CatiaPyBridgeCommandHeader.CATNls": "b54ee830030cee88fadce8bf4585b1a3da154d7b521c928b5749179cd9d3470f"
+  },
+  "original_native_live_gates": [
+    {
+      "name": "native_preview",
+      "passed": true
+    },
+    {
+      "name": "preview_no_mutation",
+      "passed": true
+    },
+    {
+      "name": "native_confirmation_refused",
+      "passed": true
+    },
+    {
+      "name": "wrong-pid",
+      "passed": true
+    },
+    {
+      "name": "wrong-document",
+      "passed": true
+    },
+    {
+      "name": "missing-target",
+      "passed": true
+    },
+    {
+      "name": "illegal-input",
+      "passed": true
+    },
+    {
+      "name": "extra-field",
+      "passed": true
+    },
+    {
+      "name": "changed_plan_refused",
+      "passed": true
+    },
+    {
+      "name": "changed_target_refused",
+      "passed": true
+    },
+    {
+      "name": "fresh_preview",
+      "passed": true
+    },
+    {
+      "name": "standalone_native_create",
+      "passed": true
+    },
+    {
+      "name": "standalone_com_readback",
+      "passed": true
+    },
+    {
+      "name": "member_preview",
+      "passed": true
+    },
+    {
+      "name": "member_state_fingerprint_refused",
+      "passed": true
+    },
+    {
+      "name": "reversible_coordinate_drive",
+      "passed": true
+    },
+    {
+      "name": "replay_no_duplicate",
+      "passed": true
+    },
+    {
+      "name": "duplicate_point_refused",
+      "passed": true
+    },
+    {
+      "name": "mcp-preview",
+      "passed": true
+    },
+    {
+      "name": "mcp_preview_no_mutation",
+      "passed": true
+    },
+    {
+      "name": "mcp-create",
+      "passed": true
+    },
+    {
+      "name": "mcp_model_readback",
+      "passed": true
+    },
+    {
+      "name": "exact_host_dlls_loaded",
+      "passed": true
+    }
+  ],
+  "original_package_mcp_verified": true,
+  "target_repository_live_verified": false,
+  "machine_paths_omitted": true,
+  "original_records_location": "Retained in the private Clean package; not required to build or run this contribution",
+  "limitations": [
+    "Original build used uncommitted development sources",
+    "Target repository connection/thread path and relocated build wrappers still need live B30 validation",
+    "Native Update fault injection not performed",
+    "State fingerprint cannot detect same-name/same-type member replacement"
+  ]
+}

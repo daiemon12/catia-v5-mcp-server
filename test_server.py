@@ -23,6 +23,7 @@ def test_imports():
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
     from catia_mcp.tools.export import ExportTools
+    from catia_mcp.tools.caa import CaaTools
     print("  All modules imported successfully")
 
 
@@ -40,6 +41,7 @@ def test_tool_definitions():
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
     from catia_mcp.tools.export import ExportTools
+    from catia_mcp.tools.caa import CaaTools
 
     conn = CATIAConnection()
     modules = {
@@ -53,6 +55,7 @@ def test_tool_definitions():
         "Assembly": AssemblyTools(conn),
         "Measurement": MeasurementTools(conn),
         "Export": ExportTools(conn),
+        "CAA": CaaTools(conn),
     }
 
     total_tools = 0
@@ -97,6 +100,8 @@ def test_server_creation():
     server = CATIAMCPServer()
     tool_count = len(server._tool_router)
     print(f"  Server created with {tool_count} tools in router")
+    assert "catia_caa_demo_create_point" in server._tool_router
+    server._executor.shutdown(wait=True)
     return tool_count
 
 
