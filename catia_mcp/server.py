@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -19,14 +20,14 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool
 
 from catia_mcp.connection import CATIAConnection
 from catia_mcp.tools.assembly import AssemblyTools
+from catia_mcp.tools.diagnostics import DiagnosticsTools
 from catia_mcp.tools.document import DocumentTools
 from catia_mcp.tools.drawing import DraftingTools
 from catia_mcp.tools.export import ExportTools
-from catia_mcp.tools.diagnostics import DiagnosticsTools
 from catia_mcp.tools.gsd import GSDTools
 from catia_mcp.tools.knowledge import KnowledgeTools
 from catia_mcp.tools.measurement import MeasurementTools
@@ -110,7 +111,7 @@ class CATIAMCPServer:
         @self.server.call_tool()
         async def handle_call_tool(
             name: str, arguments: dict[str, Any] | None
-        ) -> list[TextContent]:
+        ) -> list[TextContent] | CallToolResult:
             arguments = arguments or {}
             logger.info("Tool call: %s(%s)", name, arguments)
 
@@ -123,12 +124,23 @@ class CATIAMCPServer:
                     )]
 
                 # Auto-connect for non-connect tools
-                if name != "catia_connect" and name != "catia_disconnect":
-                    if not self.connection.is_connected:
-                        connect_msg = self.connection.connect()
-                        logger.info("Auto-connected: %s", connect_msg)
+                if (
+                    name not in {"catia_connect", "catia_disconnect", "catia_screenshot"}
+                    and not self.connection.is_connected
+                ):
+                    connect_msg = self.connection.connect()
+                    logger.info("Auto-connected: %s", connect_msg)
 
                 result = module.execute(name, arguments)
+                if isinstance(result, dict):
+                    logger.info("Tool result: %s %s", name, result["code"])
+                    return CallToolResult(
+                        content=[TextContent(
+                            type="text", text=json.dumps(result, ensure_ascii=False),
+                        )],
+                        structuredContent=result,
+                        isError=not result["ok"],
+                    )
                 logger.info("Tool result: %s", result[:200] if len(result) > 200 else result)
                 return [TextContent(type="text", text=result)]
 
@@ -151,12 +163,12 @@ class CATIAMCPServer:
                     "catia_diagnose for a full report of what this "
                     "installation exposes."
                 )
-                logger.error(error_msg, exc_info=True)
+                logger.exception(error_msg)
                 return [TextContent(type="text", text=error_msg)]
 
             except Exception as e:
                 error_msg = f"Error in {name}: {e}"
-                logger.error(error_msg, exc_info=True)
+                logger.exception(error_msg)
                 return [TextContent(type="text", text=error_msg)]
 
     async def run(self) -> None:
