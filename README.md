@@ -407,7 +407,7 @@ CATIA V5 Application
 | Tool | Description |
 |------|-------------|
 | `catia_export` | Export to STEP/IGES/STL/3DXML/VRML |
-| `catia_screenshot` | Capture 3D view to image |
+| `catia_screenshot` | Capture on temporary white background, hide/restore tree and compass, trim a chosen region to PNG ([contract](docs/screenshot-crop.md)) |
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
 

@@ -11,4 +11,4 @@ venv/
 
 # GSD smoke test outputs
 GSD_SmokeTest*.CATPart
-gsd_smoke_test.jpg
+gsd_smoke_test*.png

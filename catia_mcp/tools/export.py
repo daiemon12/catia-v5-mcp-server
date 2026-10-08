@@ -6,11 +6,11 @@ Also includes screenshot capture.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.screenshot import capture_cropped_screenshot
 
 # CATIA export format identifiers
 FORMAT_MAP = {
@@ -67,26 +67,49 @@ class ExportTools:
             {
                 "name": "catia_screenshot",
                 "description": (
-                    "Capture a screenshot of the current 3D view and save as image file. "
-                    "Supports JPG, BMP, TIFF (CATIA V5 cannot capture PNG; a .png path "
-                    "is saved as .jpg instead)."
+                    "Capture the current CATIA view, trim outer white margins and save a lossless "
+                    "PNG without resizing. Temporarily hides the specification tree and compass "
+                    "and sets a white background, then restores original UI and background. "
+                    "Keeps every non-white point, line and annotation inside the optional region. "
+                    "The corner navigation axis cannot be hidden through this tool; use region "
+                    "to exclude it. Contents outside region are discarded. Does not move the camera. "
+                    "Rejects all-white captures and "
+                    "existing output files. Returns actual dimensions and source crop coordinates."
                 ),
                 "inputSchema": {
                     "type": "object",
+                    "additionalProperties": False,
                     "properties": {
                         "file_path": {
-                            "type": "string",
-                            "description": "Output image path (e.g., 'C:/screenshots/part.png')",
+                            "type": "string", "minLength": 1,
+                            "description": "Absolute path for a new PNG file; never overwrites.",
                         },
-                        "width": {
-                            "type": "integer",
-                            "description": "Image width in pixels (default: 1920)",
-                            "default": 1920,
+                        "padding": {
+                            "type": "integer", "minimum": 0, "maximum": 4096, "default": 16,
+                            "description": "Pixels kept around content, limited by capture edges.",
                         },
-                        "height": {
-                            "type": "integer",
-                            "description": "Image height in pixels (default: 1080)",
-                            "default": 1080,
+                        "white_tolerance": {
+                            "type": "integer", "minimum": 0, "maximum": 32, "default": 0,
+                            "description": (
+                                "Background when every RGB channel is >= 255 minus this value. "
+                                "0 removes only exact white; larger values may trim very pale content."
+                            ),
+                        },
+                        "region": {
+                            "type": "object", "additionalProperties": False,
+                            "description": (
+                                "Optional source pixel rectangle containing all desired model content. "
+                                "Left/top inclusive, right/bottom exclusive. Default: whole capture. "
+                                "Choose a region excluding the lower-right navigation axis; "
+                                "content outside is discarded. Padding stays inside this region."
+                            ),
+                            "properties": {
+                                "left": {"type": "integer", "minimum": 0},
+                                "top": {"type": "integer", "minimum": 0},
+                                "right": {"type": "integer", "minimum": 1},
+                                "bottom": {"type": "integer", "minimum": 1},
+                            },
+                            "required": ["left", "top", "right", "bottom"],
                         },
                     },
                     "required": ["file_path"],
@@ -123,16 +146,12 @@ class ExportTools:
             },
         ]
 
-    def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+    def execute(self, tool_name: str, arguments: dict[str, Any]) -> str | dict[str, Any]:
         match tool_name:
             case "catia_export":
                 return self._export(arguments["file_path"], arguments.get("format"))
             case "catia_screenshot":
-                return self._screenshot(
-                    arguments["file_path"],
-                    arguments.get("width", 1920),
-                    arguments.get("height", 1080),
-                )
+                return capture_cropped_screenshot(self.conn, arguments)
             case "catia_set_view":
                 return self._set_view(arguments["view"])
             case "catia_fit_all":
@@ -175,27 +194,6 @@ class ExportTools:
                 size_info = f" ({size_bytes} bytes)"
 
         return f"Exported to {file_path}{size_info} (format: {fmt_key.upper()})"
-
-    def _screenshot(self, file_path: str, width: int = 1920, height: int = 1080) -> str:
-        self.conn.ensure_connected()
-
-        # Ensure output directory exists
-        output_dir = os.path.dirname(file_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
-
-        # CatCaptureFormat: 2 = TIFF, 4 = BMP, 5 = JPEG (no PNG in CATIA V5)
-        capture_formats = {".jpg": 5, ".jpeg": 5, ".bmp": 4, ".tif": 2, ".tiff": 2}
-        ext = os.path.splitext(file_path)[1].lower()
-        capture_format = capture_formats.get(ext)
-        if capture_format is None:
-            file_path = os.path.splitext(file_path)[0] + ".jpg"
-            capture_format = 5
-
-        viewer = self.conn.active_window.ActiveViewer
-        viewer.CaptureToFile(capture_format, file_path)
-
-        return f"Screenshot saved to {file_path} ({width}x{height})"
 
     def _set_view(self, view: str) -> str:
         self.conn.ensure_connected()

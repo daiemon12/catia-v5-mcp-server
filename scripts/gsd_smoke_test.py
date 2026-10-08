@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sys
 import traceback
+from uuid import uuid4
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -32,6 +33,8 @@ results: list[tuple[str, str, str]] = []  # (status, label, message)
 def step(label: str, fn) -> bool:
     try:
         msg = fn()
+        if isinstance(msg, dict) and not msg["ok"]:
+            raise RuntimeError(f"{msg['code']}: {msg['message']}")
         results.append(("PASS", label, str(msg)[:120]))
         print(f"  PASS  {label}")
         return True
@@ -152,7 +155,7 @@ def main() -> int:
     step("list_elements", lambda: run("catia_gsd_list_elements", {}))
 
     # ── Screenshot + save for visual inspection ──
-    shot_path = os.path.join(OUTPUT_DIR, "gsd_smoke_test.jpg")
+    shot_path = os.path.join(OUTPUT_DIR, f"gsd_smoke_test_{uuid4().hex}.png")
     step("screenshot", lambda: (
         export.execute("catia_set_view", {"view": "isometric"}),
         export.execute("catia_fit_all", {}),

@@ -1,2 +1,4 @@
-mcp>=1.0.0,<2
+mcp>=1.27.1,<2
 pywin32>=306
+opencv-python-headless>=4.10,<5
+numpy>=2,<3
