@@ -1,0 +1,2 @@
+# Preserve the accepted native source/resource bytes and recorded hashes.
+caa/point_bridge/caa_workspace/** -text whitespace=cr-at-eol,-blank-at-eof

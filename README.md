@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **98 tools** that let an AI agent:
+This MCP server exposes **99 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -27,6 +27,7 @@ This MCP server exposes **98 tools** that let an AI agent:
 - **View control** — set standard views, fit all, capture screenshots
 - **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
 - **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
+- **CAA coordinate point** — an experimental source-only Point CAA adapter with B30 build instructions, explicit preview/confirmation and native readback; see [CAA setup and support boundary](docs/caa-point.md).
 
 ## Requirements
 

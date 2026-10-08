@@ -4,7 +4,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Serialize all server COM operations and connection cleanup on one STA worker.
+  Indeterminate delivery or cancellation blocks further operations until the
+  operator checks CATIA and pending requests and restarts MCP. CAA calls never
+  take the ordinary auto-launch connection path.
+
 ### Added
+- `catia_caa_demo_create_point`: experimental source-only Point CAA adapter,
+  native source/build instructions and bundled Python protocol. Verify locally
+  built runtime/source identity and return structured outcomes with correlated
+  operation IDs and preserved native failure state. No DLL or CATPart is shipped.
+  Existing native acceptance is summarized; new live integration is pending.
 - **Knowledgeware module (98 tools total)**: `catia_create_parameter`
   (lengths and angles valuated with explicit units), `catia_set_formula`
   (create or modify in place), `catia_list_relations`,

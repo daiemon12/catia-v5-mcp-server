@@ -1,0 +1,16 @@
+recursive-include caa/point_bridge *.cpp *.h *.mk *.xml *.CATNls *.dico *.lvl *.data *.bat *.md LICENSE
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include caa/point_bridge/validation *.json
+recursive-include examples/caa_point *.md
+recursive-include caa/point_bridge/scripts *.py
+prune caa/point_bridge/caa_workspace/win_b64
+prune caa/point_bridge/caa_workspace/CATEnv
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/code/bin
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/code/productIC
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/resources
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/Objects
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/LocalGenerated
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/Objects
+prune caa/point_bridge/caa_workspace/CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalGenerated
+global-exclude *.pyc *.pyo *.obj *.log *.dll *.CATPart *.pdb *.lib

@@ -1,0 +1,48 @@
+#ifndef CATIAV5Level_H
+#define CATIAV5Level_H
+/** @CAA2Required */
+/**********************************************************************/
+/* DON T DIRECTLY INCLUDE THIS HEADER IN YOUR APPLICATION CODE. IT IS */
+/* REQUIRED TO BUILD CAA APPLICATIONS BUT IT MAY DISAPEAR AT ANY TIME */
+/**********************************************************************/
+
+/*
+// COPYRIGHT DASSAULT SYSTEMES 2000
+
+//=========================================================================
+// HEADER PERMITTING TO KNOW IN WHICH LEVEL OF V5 WE ARE BEING COMPILED
+//=========================================================================
+*/
+
+#define CATIAV5R1
+#define CATIAV5R2
+#define CATIAV5R3
+#define CATIAV5R4
+#define CATIAV5R5
+#define CATIAV5R6
+#define CATIAV5R7
+#define CATIAV5R8
+#define CATIAV5R9
+#define CATIAV5R10
+#define CATIAV5R11
+#define CATIAV5R12
+#define CATIAV5R13
+#define CATIAV5R14
+#define CATIAV5R15
+#define CATIAV5R16
+#define CATIAV5R17
+#define CATIAV5R18
+#define CATIAV5R19
+#define CATIAV5R20
+#define CATIAV5R21
+#define CATIAV5R22
+#define CATIAV5R23
+#define CATIAV5R24
+#define CATIAV5R25
+#define CATIAV5R26
+#define CATIAV5R27
+#define CATIAV5R28
+#define CATIAV5R29
+#define CATIAV5R30
+
+#endif

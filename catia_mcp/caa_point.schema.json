@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Educational native point demo params",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "part_document_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z]:[\\\\/].*\\.CATPart$",
+      "description": "Absolute path of the active, already saved disposable CATPart; never opened or saved by this tool."
+    },
+    "geometrical_set_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Unique public ordinary root Geometrical Set name; no implicit creation or fallback."
+    },
+    "point_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!MCP_|CatiaPyBridge_)[^\\\\/\\r\\n]+$",
+      "description": "Unique engineering feature name within the target set."
+    },
+    "x_mm": {
+      "type": "number",
+      "minimum": -1000000,
+      "maximum": 1000000,
+      "description": "X in mm, Part absolute coordinates."
+    },
+    "y_mm": {
+      "type": "number",
+      "minimum": -1000000,
+      "maximum": 1000000,
+      "description": "Y in mm, Part absolute coordinates."
+    },
+    "z_mm": {
+      "type": "number",
+      "minimum": -1000000,
+      "maximum": 1000000,
+      "description": "Z in mm, Part absolute coordinates."
+    },
+    "dry_run": {
+      "type": "boolean",
+      "default": true,
+      "description": "Read-only preview; returns a five-minute, one-time plan token."
+    },
+    "confirm_action": {
+      "type": "boolean",
+      "default": false,
+      "description": "Required for execution; no save/delete/overwrite authorization."
+    },
+    "plan_hash": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "state_fingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "confirmed_preview_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "catia_process_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "Exact CNEXT PID; mismatch fails before mutation."
+    }
+  },
+  "required": [
+    "catia_process_id",
+    "part_document_path",
+    "geometrical_set_name",
+    "point_name",
+    "x_mm",
+    "y_mm",
+    "z_mm"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "dry_run": {
+            "const": false
+          }
+        },
+        "required": [
+          "dry_run"
+        ]
+      },
+      "then": {
+        "properties": {
+          "confirm_action": {
+            "const": true
+          }
+        },
+        "required": [
+          "confirm_action",
+          "plan_hash",
+          "state_fingerprint",
+          "confirmed_preview_token"
+        ]
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "catia-v5-mcp-server"
 version = "0.2.2"
-description = "MCP Server for CATIA V5 - Connect Claude AI to Dassault Systèmes CATIA V5 via COM Automation"
+description = "MCP Server for CATIA V5 - Connect Claude AI to Dassault Syst猫mes CATIA V5 via COM Automation"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -15,8 +15,9 @@ authors = [
 keywords = ["catia", "catia-v5", "mcp", "claude", "dassault-systemes", "cao", "cad", "automation"]
 
 dependencies = [
-    "mcp>=1.0.0,<2",
+    "mcp>=1.27.1,<2",
     "pywin32>=306",
+    "jsonschema>=4.18,<5",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,10 @@ catia-mcp = "catia_mcp.server:main"
 
 [tool.setuptools.packages.find]
 include = ["catia_mcp*"]
+
+[tool.setuptools.package-data]
+catia_mcp = ["*.schema.json"]
+"catia_mcp.caa" = ["native-source.json", "LICENSE"]
 
 [tool.ruff]
 line-length = 100
