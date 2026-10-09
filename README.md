@@ -442,6 +442,21 @@ CATIA V5 Application
 
 ## Troubleshooting
 
+### Structured tool errors and cancellation
+
+Errors returned by the server boundary for all 98 tools now set MCP
+`isError=true` and include `structuredContent` with `ok=false`, `code`,
+`message`, `operation_id`, `tool`, `data`, `effects`, `diagnostics`, `warnings`
+and `recovery`. The text content contains the same JSON. Clients should inspect
+`isError` and the error code rather than matching a plain-text error phrase.
+Successful text responses and input schemas remain unchanged.
+
+An ordinary exception, including `ValueError`, does not block the next call.
+Cancelling a request does not cancel its COM operation: the STA worker finishes
+that operation before running queued calls. Cancellation does not prove rollback.
+A modal dialog can still block the worker; resolve it in CATIA before continuing.
+See [runtime behavior and recovery](docs/server-runtime.md).
+
 ### "AttributeError" on methods that should exist (AddNewPad, etc.)
 A stale pywin32 COM cache is the most common cause, confirmed in the field:
 methods that genuinely exist stop resolving. Delete the generated bindings

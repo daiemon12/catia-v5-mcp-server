@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- CATIA calls and connection cleanup run serially on one STA worker. Ordinary
+  errors and client cancellations do not lock the server; queued calls run after
+  the current operation completes. Cancellation does not cancel a COM call.
+- Server-boundary errors for all 98 existing tools now return a structured envelope
+  and MCP `isError=true`; successful text outputs and tool schemas are unchanged.
+  `UNSUPPORTED_CAPABILITY` retains cache, release and workbench guidance.
+- Require `mcp>=1.27.0,<2` for structured handler results and transport-close
+  cancellation support; declare the directly imported `jsonschema>=4.20,<5`.
+- Windows CI installs development dependencies and runs pytest regression tests.
+
+### Runtime limits
+- A CATIA modal dialog can block the worker and shutdown. Client cancellation
+  does not prove model rollback or stop an in-flight COM call. Close the blocking
+  dialog; if CATIA cannot recover, terminate CNEXT and restart the MCP process.
+
 ### Added
 - **Knowledgeware module (98 tools total)**: `catia_create_parameter`
   (lengths and angles valuated with explicit units), `catia_set_formula`
