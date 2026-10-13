@@ -1,14 +1,19 @@
 # Serialized CATIA execution
 
 MCP requests enqueue work on one persistent STA thread. Connection initialization,
-tool execution and connection cleanup use that same thread. The 98 existing tool
-schemas and successful text responses are unchanged.
+tool execution and connection cleanup use that same thread, for CATIA V5 and
+CATIA 3DEXPERIENCE alike (the platform is detected on connect).
 
 Server-boundary failures return an `ok/code/operation_id/tool/message/data/effects/
 diagnostics/warnings/recovery` envelope as both structured content and indented
 JSON text, with MCP `isError=true`. Input validation failures do not access COM.
 Missing Automation methods retain the guidance about release availability,
-pywin32 cache and workbench licences in `message`. Exceptions include their
+pywin32 cache and workbench licences in `message` (on 3DEXPERIENCE it also
+points to `catia_inspect_api` and DSYAutomation.chm). Tools raise typed
+failures where they can classify them (`INVALID_ARGUMENT`,
+`NO_ACTIVE_DOCUMENT`, `WRONG_DOCUMENT_TYPE`, `OBJECT_NOT_FOUND`,
+`AMBIGUOUS_TARGET`, `UNSUPPORTED_CAPABILITY`, `PERMISSION_DENIED`);
+`effects.modified=false` marks failures detected before CATIA was touched. Exceptions include their
 message and traceback in `catia_mcp.log`.
 
 An ordinary error affects one call. Correct the input or inspect CATIA, then call

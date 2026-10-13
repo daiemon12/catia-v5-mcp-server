@@ -1,4 +1,4 @@
-"""CATIA V5 MCP Tools - CAD automation tools exposed via MCP."""
+"""CATIA MCP Tools - CAD automation tools exposed via MCP (V5 and 3DEXPERIENCE)."""
 
 from catia_mcp.tools.document import DocumentTools
 from catia_mcp.tools.drawing import DraftingTools
@@ -10,6 +10,8 @@ from catia_mcp.tools.knowledge import KnowledgeTools
 from catia_mcp.tools.assembly import AssemblyTools
 from catia_mcp.tools.measurement import MeasurementTools
 from catia_mcp.tools.export import ExportTools
+from catia_mcp.tools.introspection import IntrospectionTools
+from catia_mcp.tools.plm import PLMTools
 
 __all__ = [
     "DocumentTools",
@@ -22,4 +24,6 @@ __all__ = [
     "AssemblyTools",
     "MeasurementTools",
     "ExportTools",
+    "IntrospectionTools",
+    "PLMTools",
 ]

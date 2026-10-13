@@ -1,6 +1,6 @@
 """Quick test to verify the MCP server loads correctly.
 
-This test does NOT require CATIA V5 — it only checks that:
+This test does NOT require CATIA (V5 or 3DEXPERIENCE) — it only checks that:
 1. All modules import correctly
 2. All tools are registered
 3. Tool definitions are valid
@@ -23,6 +23,8 @@ def test_imports():
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
     from catia_mcp.tools.export import ExportTools
+    from catia_mcp.tools.plm import PLMTools
+    from catia_mcp.tools.introspection import IntrospectionTools
     print("  All modules imported successfully")
 
 
@@ -40,6 +42,8 @@ def test_tool_definitions():
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
     from catia_mcp.tools.export import ExportTools
+    from catia_mcp.tools.plm import PLMTools
+    from catia_mcp.tools.introspection import IntrospectionTools
 
     conn = CATIAConnection()
     modules = {
@@ -53,6 +57,8 @@ def test_tool_definitions():
         "Assembly": AssemblyTools(conn),
         "Measurement": MeasurementTools(conn),
         "Export": ExportTools(conn),
+        "PLM": PLMTools(conn),
+        "Introspection": IntrospectionTools(conn),
     }
 
     total_tools = 0
@@ -102,7 +108,7 @@ def test_server_creation():
 
 def main():
     print("=" * 60)
-    print("CATIA V5 MCP Server — Verification Test")
+    print("CATIA MCP Server (V5 + 3DEXPERIENCE) — Verification Test")
     print("=" * 60)
     print()
 

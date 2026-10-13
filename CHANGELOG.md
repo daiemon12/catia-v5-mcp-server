@@ -4,7 +4,58 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- **CATIA 3DEXPERIENCE (V6) support (123 tools total).** The server detects
+  CATIA V5 or CATIA 3DEXPERIENCE on connect (`--platform` /
+  `CATIA_MCP_PLATFORM` to force it) and the same tools drive both. A
+  platform layer resolves the active Part (3D Shape level ActiveObject, or
+  root occurrence -> RepInstances -> GetItem("Part") at 3D Part level), the
+  editor selection, and the PLM services: new content via PLMNewService
+  (3D Part, falling back to 3D Shape when the licence refuses it), save via
+  PLMPropagateService, measurement via MeasurableService / InertiaService
+  with CATMeasurableType read from the installation's type library.
+  Assemblies use occurrences and instance positions; components are
+  inserted by copy-paste under the root, verified by the child count.
+  Drawings use DrawingRoot and the DrawingDefineGenView factory, bound from
+  live type information. Not available on 3DEXPERIENCE, with explicit
+  UNSUPPORTED_CAPABILITY: file export of database content, assembly
+  constraints (engineering connections), face-driven drawing views. Built
+  from the public object model and field macros, covered by offline
+  contract tests; not yet live-validated (docs/3dexperience.md).
+- 3DEXPERIENCE PLM tools: `catia_search_database`,
+  `catia_open_from_database` (refuses ambiguous matches),
+  `catia_get_plm_attributes`, `catia_set_plm_attributes`,
+  `catia_insert_existing_component`; `catia_get_product_tree` and
+  `catia_activate_document` on both platforms.
+- Part Design: `catia_rib`, `catia_slot` (removal verified), `catia_add_body`,
+  `catia_set_active_body`, `catia_boolean` (add/remove/intersect/assemble),
+  `catia_rename_feature`, `catia_set_feature_active`,
+  `catia_set_visibility`, `catia_set_color`. `catia_create_sketch` takes a
+  `support` (plane element or planar `Face.N`).
+- GSD: `catia_gsd_translate`, `catia_gsd_rotate`,
+  `catia_gsd_point_on_curve`, `catia_gsd_extract`, `catia_gsd_shape_fillet`.
+- `catia_measure_element`, `catia_drawing_list_views`.
+- API discovery: `catia_inspect_api` reads members, parameter names/kinds
+  and enum values from the live type library (read-only);
+  `catia_run_script` runs VBScript in CATIA, disabled unless the server is
+  started with `--allow-scripts`.
+- Typed failure codes (`WRONG_DOCUMENT_TYPE`, `NO_ACTIVE_DOCUMENT`,
+  `OBJECT_NOT_FOUND`, `AMBIGUOUS_TARGET`, `PERMISSION_DENIED`, ...) with
+  `effects.modified=false` when nothing was touched.
+- `scripts/live_smoke_test.py`: builds and measures a throw-away part on a
+  live V5 or 3DEXPERIENCE session and writes a JSON report.
+
+### Fixed
+- `catia_move_component` and `catia_list_components` (V5): Position
+  components were read with a Python list that late-bound COM never fills,
+  so positions listed as 0 and a move wrote a zero rotation matrix. They are
+  now read through SystemService.Evaluate, and rotations are applied to the
+  component's axes about its own origin (the previous composition was
+  transposed).
+
 ### Changed
+- pywin32 is required only on Windows (dependency marker), so the offline
+  test suite installs on any OS.
 - CATIA calls and connection cleanup run serially on one STA worker. Ordinary
   errors and client cancellations do not lock the server; queued calls run after
   the current operation completes. Cancellation does not cancel a COM call.

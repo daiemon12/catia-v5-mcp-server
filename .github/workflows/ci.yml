@@ -8,8 +8,8 @@ on:
 
 jobs:
   test:
-    # pywin32 is a hard dependency and only installs on Windows,
-    # which is also the only platform the server actually targets.
+    # Windows is the only platform the server drives CATIA on (pywin32 is
+    # a Windows-only dependency); the offline suite itself is portable.
     runs-on: windows-latest
     strategy:
       fail-fast: false

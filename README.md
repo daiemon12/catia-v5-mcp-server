@@ -1,6 +1,6 @@
-# CATIA V5 MCP Server
+# CATIA V5 & 3DEXPERIENCE MCP Server
 
-> Connect AI agents to Dassault Systemes CATIA V5 via the Model Context Protocol (MCP) — works with Claude, Cursor, Windsurf, Cline, VS Code, Codex and any MCP-compatible client.
+> Connect AI agents to Dassault Systemes CATIA V5 and CATIA 3DEXPERIENCE (V6) via the Model Context Protocol (MCP) — works with Claude, Cursor, Windsurf, Cline, VS Code, Codex and any MCP-compatible client.
 
 [![Release](https://img.shields.io/github/v/release/daiemon12/catia-v5-mcp-server)](https://github.com/daiemon12/catia-v5-mcp-server/releases)
 [![CI](https://github.com/daiemon12/catia-v5-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/daiemon12/catia-v5-mcp-server/actions/workflows/ci.yml)
@@ -8,30 +8,32 @@
 [![Clones](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-clones.json)](traffic/clones.json)
 [![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/daiemon12/catia-v5-mcp-server/main/traffic/badge-views.json)](traffic/views.json)
 
-The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, measurement, drawing export and COM automation in natural language, from any AI agent that speaks MCP.
+The first open-source MCP server for CATIA V5, now also driving CATIA on the 3DEXPERIENCE platform. Drive parametric CAD modeling, measurement, drawing export and COM automation in natural language, from any AI agent that speaks MCP. The platform is detected when the server connects; the same tools work on both.
 
 ![Repository traffic](traffic/chart.png)
 
 ## What it does
 
-This MCP server exposes **98 tools** that let an AI agent:
+This MCP server exposes **123 tools** that let an AI agent:
 
-- **Create and manage documents** — new Part, Product (assembly), open, save, close
-- **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
-- **Part Design** — Pad, Pocket, Shaft, Groove, Fillet, Chamfer, Hole, Shell, Draft, Thickness, Patterns (rectangular/circular/user), Mirror
-- **Generative Shape Design (GSD)** — 3D wireframe (points, lines, planes, splines, circles), Multi-sections Surface (loft), Sweep, Extrude, Revolve, Fill, Blend, Offset, Join, Split, Trim, Symmetry, ThickSurface/CloseSurface to solids
-- **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
-- **Measurement** — distance, inertia, bounding box, parameters
+- **Create and manage documents** — new Part, Product (assembly), open, save, close; on 3DEXPERIENCE: 3D Parts / 3D Shapes / Physical Products in session, saved to the 3DSpace database
+- **3DEXPERIENCE PLM** — search the database, open objects by title/revision, read and write PLM attributes, product tree
+- **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints; sketches on origin planes, plane elements or planar faces
+- **Part Design** — Pad, Pocket, Shaft, Groove, Rib, Slot, Fillet, Chamfer, Hole, Shell, Draft, Thickness, Patterns (rectangular/circular/user), Mirror, multiple bodies and boolean operations, rename, activate/deactivate, show/hide, colors
+- **Generative Shape Design (GSD)** — 3D wireframe (points, points on curves, lines, planes, splines, circles), Multi-sections Surface (loft), Sweep, Extrude, Revolve, Fill, Blend, Offset, Join, Split, Trim, Symmetry, Translate, Rotate, Extract, Shape Fillet, ThickSurface/CloseSurface to solids
+- **Assembly** — add or insert components, Fix/Coincidence/Offset/Angle constraints (V5), move/rotate, product tree
+- **Measurement** — distance, inertia, bounding box, per-element measures, parameters
 - **Knowledgeware** — user parameters, formulas, design tables, relations
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
 - **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
-- **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
+- **Diagnostics** — report the platform and CATIA release and probe which automation APIs the installation exposes
+- **API discovery** — inspect the live automation API (members, parameters, enum values) from CATIA's type library, and optionally run VBScript inside CATIA (opt-in)
 
 ## Requirements
 
 - **Windows** (COM automation is Windows-only)
-- **CATIA V5** installed and licensed (R2016+)
+- **CATIA V5** installed and licensed (R2016+), **or CATIA on the 3DEXPERIENCE platform** (the native app, started and logged in; see [CATIA 3DEXPERIENCE (V6)](#catia-3dexperience-v6))
 - **Python 3.10+**
 - Any **MCP client**: Claude Desktop, Claude Code, Cursor, Windsurf, Cline, VS Code (Copilot/MCP), Codex CLI, ChatGPT via an HTTP bridge, and others
 
@@ -63,6 +65,40 @@ and awaits live confirmation on real CATIA; reports welcome.
 
 Reports from other releases are welcome, open an issue with your CATIA version
 and the tool results (the `catia_diagnose` tool output is the ideal payload).
+
+## CATIA 3DEXPERIENCE (V6)
+
+The server drives CATIA on the 3DEXPERIENCE platform through the same COM
+ProgID (`CATIA.Application`) and the same tools. The platform is detected on
+`catia_connect` (override with `--platform 3dx|v5` or the
+`CATIA_MCP_PLATFORM` environment variable). What changes underneath:
+
+| Concept | CATIA V5 | CATIA 3DEXPERIENCE |
+|---------|----------|--------------------|
+| Active content | `ActiveDocument.Part` | `ActiveEditor.ActiveObject` (3D Shape level) or root occurrence → `RepInstances` → `GetItem("Part")` (3D Part level) |
+| New part / product / drawing | `Documents.Add` | `PLMNewService.PLMCreate` ("3DPart" or "3DShape", "VPMReference", "Drawing") |
+| Open | file path | `catia_search_database` / `catia_open_from_database` (Search + PLMOpen) |
+| Save | file Save / Save As | `PLMPropagateService` (writes to the shared 3DSpace database) |
+| Selection | `Document.Selection` | `Editor.Selection` |
+| Measure | `SPAWorkbench` | `MeasurableService` / `InertiaService` editor services |
+| Assembly | `Products`, constraints | occurrences / instances; insert by copy-paste; engineering connections are not scriptable |
+| Drawing views | `GenerativeBehavior` | `DrawingDefineGenView` factory, bound from the live type information |
+
+Part Design, GSD, sketcher and knowledgeware tools use the same factory APIs
+on both platforms once the Part is resolved. What does not port, and why,
+is listed in [docs/3dexperience.md](docs/3dexperience.md): file export of
+database content, assembly constraints, face-driven drawing views, and
+scripted creation of 3D Parts / Physical Products on sites without the
+matching licence (the server falls back to a 3D Shape and says so).
+
+**Validation status.** The 3DEXPERIENCE paths were built from the published
+3DEXPERIENCE automation object model and field-reported macros, and are
+covered by offline contract tests; they have not yet been run against a live
+3DEXPERIENCE session. Run `python scripts/live_smoke_test.py` on your machine
+(it builds and measures a throw-away part, saves nothing) and report the
+JSON it writes, together with `catia_diagnose` output. When a tool reports
+`UNSUPPORTED_CAPABILITY`, `catia_inspect_api` shows what your release
+exposes.
 
 ## Quick Install (Recommended)
 
@@ -243,11 +279,15 @@ reached through a private network such as Tailscale or an SSH tunnel, never
 the open internet. Full setup and client configurations:
 [docs/remote-access.md](docs/remote-access.md).
 
-### 4. Start CATIA V5
+### 4. Start CATIA
 
-Make sure CATIA V5 is running before asking your agent to interact with it. The server will automatically connect to the running instance.
+Make sure CATIA is running before asking your agent to interact with it. The server will automatically connect to the running instance and detect whether it is CATIA V5 or CATIA 3DEXPERIENCE.
 
-If CATIA V5 is not running, the server will attempt to launch it (requires CATIA to be registered as COM server: `cnext.exe /regserver`).
+If CATIA V5 is not running, the server will attempt to launch it (requires CATIA to be registered as COM server: `cnext.exe /regserver`). For 3DEXPERIENCE, start the native app from the 3DEXPERIENCE launcher and log in to your platform and collaborative space before connecting.
+
+Optional server flags: `--platform auto|v5|3dx` forces the platform;
+`--allow-scripts` enables `catia_run_script` (VBScript inside CATIA with
+your full rights; off by default).
 
 ## Usage Examples
 
@@ -268,6 +308,9 @@ Once configured, just talk to your AI agent:
 ### Assembly
 > "Create a new assembly. Add the bracket from C:/parts/bracket.CATPart and the base from C:/parts/base.CATPart. Fix the base, then create a coincidence constraint between the two."
 
+### 3DEXPERIENCE
+> "Find the 3D Part titled 'Bracket' in the database, open revision B.1, add a 2 mm fillet on Edge.4, measure its mass, then save it."
+
 ## Architecture
 
 ```
@@ -276,19 +319,27 @@ catia-v5-mcp-server/
 │   ├── __init__.py
 │   ├── __main__.py          # python -m catia_mcp entry point
 │   ├── server.py            # MCP Server — tool registration & routing
-│   ├── connection.py        # COM connection manager (win32com)
+│   ├── connection.py        # COM connection + V5 / 3DEXPERIENCE platform layer
+│   ├── plm.py               # 3DEXPERIENCE PLM services (create, open, save, search, attributes)
+│   ├── measure.py           # Measurement backend (SPAWorkbench / MeasurableService)
+│   ├── references.py        # Named element and Face.N / Edge.N resolution
+│   ├── automation.py        # COM helpers (out-parameters via SystemService.Evaluate)
+│   ├── introspect.py        # Live type-library reading (members, enums)
+│   ├── errors.py            # Typed tool failures (stable error codes)
 │   ├── http_transport.py    # Optional remote access (Streamable HTTP + token)
 │   └── tools/
 │       ├── __init__.py
-│       ├── document.py      # Document management (9 tools)
+│       ├── document.py      # Documents / editors (10 tools)
+│       ├── plm.py           # 3DEXPERIENCE database + product tree (5 tools)
 │       ├── sketcher.py      # 2D Sketch tools (11 tools)
-│       ├── part_design.py   # 3D Part Design features (18 tools)
-│       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (24 tools)
-│       ├── assembly.py      # Assembly/Product tools (9 tools)
-│       ├── measurement.py   # Measurement & analysis (6 tools)
-│       ├── drawing.py       # Drafting: drawings, views, dimensions, text & tables (11 tools)
+│       ├── part_design.py   # 3D Part Design features, bodies, booleans (27 tools)
+│       ├── gsd.py           # Generative Shape Design — wireframe & surfaces (29 tools)
+│       ├── assembly.py      # Assembly/Product tools (10 tools)
+│       ├── measurement.py   # Measurement & analysis (7 tools)
+│       ├── drawing.py       # Drafting: drawings, views, dimensions, text & tables (12 tools)
 │       ├── knowledge.py     # Knowledgeware: parameters, formulas, design tables (5 tools)
 │       ├── diagnostics.py   # Installation diagnostics (1 tool)
+│       ├── introspection.py # API discovery and opt-in scripting (2 tools)
 │       └── export.py        # Export & view control (4 tools)
 ├── pyproject.toml
 ├── requirements.txt
@@ -308,35 +359,50 @@ catia_mcp/server.py (MCP Server)
     ▼
 catia_mcp/tools/*.py (Tool modules)
     │
+    │ connection.py: platform layer (active Part, selection, services)
     │ win32com.client (COM Automation)
     ▼
-CATIA V5 Application
+CATIA V5 Application  |  CATIA 3DEXPERIENCE (native app)
 ```
 
 1. The MCP client sends tool calls over stdio
 2. The server routes each call to the appropriate tool module
-3. Each tool module uses `win32com.client` to drive CATIA V5 via COM
+3. Each tool module asks the platform layer for the active Part, body,
+   selection or service, then drives CATIA via COM on one serialized
+   STA worker thread
 4. Results (JSON, text) are returned to the agent
 
 ## Tool Reference
 
-### Document Tools (9)
+Tools work on both platforms unless marked **V5** or **3DX**.
+
+### Document Tools (10)
 | Tool | Description |
 |------|-------------|
-| `catia_connect` | Connect to CATIA V5 |
-| `catia_disconnect` | Disconnect from CATIA V5 |
-| `catia_new_part` | Create a new Part document |
-| `catia_new_product` | Create a new Product (assembly) |
-| `catia_open_document` | Open an existing document |
-| `catia_save_document` | Save / Save As |
-| `catia_close_document` | Close active document |
-| `catia_list_documents` | List all open documents |
-| `catia_get_active_document_info` | Get detailed info about active document |
+| `catia_connect` | Connect to CATIA (platform detected) |
+| `catia_disconnect` | Disconnect from CATIA |
+| `catia_new_part` | New Part (V5 CATPart; 3DX 3D Part, falling back to 3D Shape) |
+| `catia_new_product` | New Product (V5 CATProduct; 3DX Physical Product, licence permitting) |
+| `catia_open_document` | Open a file (**V5**; 3DX only where `Documents.Open` exists) |
+| `catia_save_document` | Save / Save As (V5); save to the 3DSpace database (3DX) |
+| `catia_close_document` | Close active document / editor window |
+| `catia_list_documents` | List open documents (V5) or editors (3DX) |
+| `catia_get_active_document_info` | Detailed info: bodies, features, geosets, PLM attributes |
+| `catia_activate_document` | Bring a document / editor window to the front |
+
+### 3DEXPERIENCE PLM Tools (5)
+| Tool | Description |
+|------|-------------|
+| `catia_search_database` | **3DX** Search 3DSpace by title or attribute (wildcards) |
+| `catia_open_from_database` | **3DX** Open by title, revision or result index; never guesses between matches |
+| `catia_get_plm_attributes` | **3DX** Read PLM attributes of the active object |
+| `catia_set_plm_attributes` | **3DX** Set PLM attributes (in session until saved) |
+| `catia_get_product_tree` | Product structure tree (V5 products, 3DX occurrences) |
 
 ### Sketcher Tools (11)
 | Tool | Description |
 |------|-------------|
-| `catia_create_sketch` | Create sketch on XY/YZ/ZX plane |
+| `catia_create_sketch` | Create sketch on XY/YZ/ZX, a plane element, or a planar face |
 | `catia_close_sketch` | Close sketch, return to Part Design |
 | `catia_sketch_line` | Draw a line |
 | `catia_sketch_rectangle` | Draw a rectangle (2 corners) |
@@ -348,7 +414,7 @@ CATIA V5 Application
 | `catia_sketch_constraint` | Add dimensional/geometric constraint |
 | `catia_sketch_get_geometry` | List sketch geometry elements |
 
-### Part Design Tools (18)
+### Part Design Tools (27)
 | Tool | Description |
 |------|-------------|
 | `catia_pad` | Pad (extrusion) |
@@ -369,8 +435,17 @@ CATIA V5 Application
 | `catia_delete_feature` | Delete a feature by name |
 | `catia_list_edges` | List edges of the final solid as indexed Edge.N names |
 | `catia_list_faces` | List faces of the final solid as indexed Face.N names |
+| `catia_rib` | Rib: sweep a profile along a center curve (adds material) |
+| `catia_slot` | Slot: sweep a profile along a center curve (removes material, verified) |
+| `catia_add_body` | Add a body and make it the active body |
+| `catia_set_active_body` | Choose the body receiving new features |
+| `catia_boolean` | Add / remove / intersect / assemble a body into another |
+| `catia_rename_feature` | Rename a feature, sketch, body or GSD element |
+| `catia_set_feature_active` | Activate or deactivate a feature |
+| `catia_set_visibility` | Show or hide elements |
+| `catia_set_color` | Set element display colors |
 
-### Generative Shape Design Tools (24)
+### Generative Shape Design Tools (29)
 | Tool | Description |
 |------|-------------|
 | `catia_gsd_create_geoset` | Create a Geometrical Set and make it active |
@@ -397,21 +472,27 @@ CATIA V5 Application
 | `catia_gsd_symmetry` | Mirror an element about a plane |
 | `catia_gsd_thick_surface` | Surface → solid by thickness (Part Design) |
 | `catia_gsd_close_surface` | Closed surface → solid (Part Design) |
+| `catia_gsd_translate` | Translate an element along a vector |
+| `catia_gsd_rotate` | Rotate an element around an axis |
+| `catia_gsd_point_on_curve` | Point at a fraction of a curve's length |
+| `catia_gsd_extract` | Extract a face/edge (Face.N / Edge.N) or element |
+| `catia_gsd_shape_fillet` | Bi-tangent shape fillet between two surfaces |
 
-### Assembly Tools (9)
+### Assembly Tools (10)
 | Tool | Description |
 |------|-------------|
-| `catia_add_component` | Add existing part to assembly |
-| `catia_add_new_part` | Create new part in assembly |
-| `catia_fix_constraint` | Fix a component in place |
-| `catia_coincidence_constraint` | Coincidence constraint |
-| `catia_offset_constraint` | Offset constraint |
-| `catia_angle_constraint` | Angle constraint |
-| `catia_move_component` | Move/rotate a component |
-| `catia_list_components` | List assembly components |
-| `catia_list_constraints` | List assembly constraints |
+| `catia_add_component` | **V5** Add an existing part/product file to the assembly |
+| `catia_add_new_part` | Create a new part in the assembly (3DX: 3D Part pasted under the root, verified) |
+| `catia_insert_existing_component` | **3DX** Insert a database product/part under the root (verified by child count) |
+| `catia_fix_constraint` | **V5** Fix a component in place |
+| `catia_coincidence_constraint` | **V5** Coincidence constraint |
+| `catia_offset_constraint` | **V5** Offset constraint |
+| `catia_angle_constraint` | **V5** Angle constraint |
+| `catia_move_component` | Move/rotate a component about its own origin |
+| `catia_list_components` | List components with positions |
+| `catia_list_constraints` | List constraints (V5) or engineering connections (3DX) |
 
-### Measurement Tools (6)
+### Measurement Tools (7)
 | Tool | Description |
 |------|-------------|
 | `catia_measure_distance` | Measure distance between elements |
@@ -420,16 +501,17 @@ CATIA V5 Application
 | `catia_get_parameters` | List all parameters |
 | `catia_set_parameter` | Modify a parameter value |
 | `catia_update_part` | Force rebuild |
+| `catia_measure_element` | Volume / area / length / radius / point of one element |
 
 ### Export Tools (4)
 | Tool | Description |
 |------|-------------|
-| `catia_export` | Export to STEP/IGES/STL/3DXML/VRML |
+| `catia_export` | Export to STEP/IGES/STL/3DXML/VRML (**V5**; 3DX only where a document with ExportData exists) |
 | `catia_screenshot` | Capture 3D view to image |
 | `catia_set_view` | Set view orientation |
 | `catia_fit_all` | Fit all in view |
 
-### Drafting Tools (11) — experimental
+### Drafting Tools (12) — experimental
 | Tool | Description |
 |------|-------------|
 | `catia_new_drawing` | Create a Drawing document (CATDrawing) |
@@ -443,6 +525,7 @@ CATIA V5 Application
 | `catia_drawing_list_dimensions` | List a view's dimensions with values and status |
 | `catia_drawing_list_view_geometry` | List a view's manually drawn 2D geometry (generated curves are not exposed by CATIA) |
 | `catia_drawing_add_dimension` | Add a dimension between manually drawn 2D elements |
+| `catia_drawing_list_views` | List sheets and views of the active drawing |
 
 ### Knowledgeware Tools (5)
 | Tool | Description |
@@ -456,18 +539,27 @@ CATIA V5 Application
 ### Diagnostics (1)
 | Tool | Description |
 |------|-------------|
-| `catia_diagnose` | Report CATIA version/release/SP and probe which automation APIs this installation exposes. Run it first when tools fail with UNSUPPORTED_CAPABILITY, and paste its output in compatibility reports |
+| `catia_diagnose` | Report platform, CATIA version/release/SP and probe which automation APIs (and on 3DX, PLM services) this installation exposes. Run it first when tools fail with UNSUPPORTED_CAPABILITY, and paste its output in compatibility reports |
+
+### API Discovery (2)
+| Tool | Description |
+|------|-------------|
+| `catia_inspect_api` | Read-only: list members, parameters and enum values of a live object (e.g. `part.ShapeFactory`, `editor.GetService("MeasurableService")`) |
+| `catia_run_script` | Run VBScript inside CATIA; disabled unless the server runs with `--allow-scripts` |
 
 ## Troubleshooting
 
 ### Structured tool errors and cancellation
 
-Errors returned by the server boundary for all 98 tools now set MCP
+Errors returned by the server boundary for all tools set MCP
 `isError=true` and include `structuredContent` with `ok=false`, `code`,
 `message`, `operation_id`, `tool`, `data`, `effects`, `diagnostics`, `warnings`
 and `recovery`. The text content contains the same JSON. Clients should inspect
 `isError` and the error code rather than matching a plain-text error phrase.
-Successful text responses and input schemas remain unchanged.
+Codes include `INVALID_ARGUMENT`, `NO_ACTIVE_DOCUMENT`, `WRONG_DOCUMENT_TYPE`,
+`OBJECT_NOT_FOUND`, `AMBIGUOUS_TARGET`, `UNSUPPORTED_CAPABILITY`,
+`PERMISSION_DENIED` and `COM_ERROR`; `effects.modified=false` means the
+failure was detected before CATIA was touched.
 
 An ordinary exception, including `ValueError`, does not block the next call.
 Cancelling a request does not cancel its COM operation: the STA worker finishes
@@ -489,15 +581,24 @@ restart. Run `catia_diagnose` to verify which APIs resolve afterwards.
 ```bash
 pip install pywin32
 ```
-This server requires Windows. It will not work on macOS or Linux.
+This server requires Windows to drive CATIA. Agents on macOS or Linux connect
+to it remotely (see Remote use); the offline test suite runs anywhere.
 
-### "Failed to connect to CATIA V5"
-1. Make sure CATIA V5 is running
-2. Register CATIA as COM server: navigate to `C:\Program Files\Dassault Systemes\B<version>\<os>\code\bin\` and run `cnext.exe /regserver`
-3. Check that no modal dialog is blocking CATIA
+### "Failed to connect to CATIA"
+1. Make sure CATIA is running (3DEXPERIENCE: started from the launcher and logged in)
+2. CATIA V5: register CATIA as COM server: navigate to `C:\Program Files\Dassault Systemes\B<version>\<os>\code\bin\` and run `cnext.exe /regserver`
+3. With both V5 and 3DEXPERIENCE installed, `CATIA.Application` points to whichever registered last; start only the one you want, or re-register it
+4. Check that no modal dialog is blocking CATIA
 
-### "No active document"
-Create or open a document first using `catia_new_part` or `catia_open_document`.
+### "No active document" / "No active editor"
+Create or open content first: `catia_new_part`, `catia_open_document` (V5) or
+`catia_open_from_database` (3DEXPERIENCE).
+
+### 3DEXPERIENCE: "Operation not authorized" when creating content
+Scripted creation of 3D Parts and Physical Products needs a licence/role many
+sites do not grant. `catia_new_part` falls back to a 3D Shape; for products,
+create them in the UI or open an existing one. See
+[docs/3dexperience.md](docs/3dexperience.md).
 
 ### COM ByRef array limitations
 Some measurement methods may not work with late binding. If you encounter issues, try using `pycatia` as an alternative backend (contribution welcome).
@@ -508,8 +609,8 @@ This project is open-source. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelin
 
 - **Drafting** extras: frames and title-block generators, BOM automation
 - **pycatia backend** as alternative to raw win32com
-- **Tests** with COM mocking
-- **3DEXPERIENCE** CATIA support
+- **3DEXPERIENCE live reports**: `scripts/live_smoke_test.py` results and
+  `catia_diagnose` output from your release
 
 ## Services and support
 

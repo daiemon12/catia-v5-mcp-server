@@ -1,23 +1,38 @@
-"""Part Design tools for CATIA V5.
+"""Part Design tools for CATIA V5 and CATIA 3DEXPERIENCE.
 
 3D feature creation: Pad, Pocket, Fillet, Chamfer, Shaft, Groove, Hole,
-RectPattern, CircPattern, Mirror, Rib, Slot, Shell, Thickness, Draft.
+RectPattern, CircPattern, UserPattern, Mirror, Rib, Slot, Shell, Thickness,
+Draft, plus bodies, boolean operations and feature management.
+
+The ShapeFactory API is the same on both platforms once the Part is
+resolved (connection.get_active_part). Platform differences are confined to
+measurement (measure.Measurer) and to the circular-pattern axis recipe.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
+from catia_mcp.automation import iter_items
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.errors import InvalidArgument, ObjectNotFound
+from catia_mcp.measure import Measurer
+from catia_mcp.references import (
+    body_by_name,
+    find_element,
+    iter_geosets,
+    topology_index,
+    topology_reference,
+)
 
 
 class PartDesignTools:
-    """Tools for 3D Part Design features in CATIA V5."""
+    """Tools for 3D Part Design features in CATIA V5 and 3DEXPERIENCE."""
 
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
+        self.measure = Measurer(connection)
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         return [
@@ -469,6 +484,158 @@ class PartDesignTools:
                     },
                 },
             },
+            {
+                "name": "catia_rib",
+                "description": (
+                    "Create a Rib: sweep a closed profile along a center curve, adding "
+                    "material. Profile and center curve are sketch or curve element names "
+                    "(close the sketches first)."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "profile": {"type": "string", "description": "Profile sketch/curve name (closed)"},
+                        "center_curve": {"type": "string", "description": "Center curve sketch/curve name"},
+                    },
+                    "required": ["profile", "center_curve"],
+                },
+            },
+            {
+                "name": "catia_slot",
+                "description": (
+                    "Create a Slot: sweep a closed profile along a center curve, removing "
+                    "material. The removed volume is verified."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "profile": {"type": "string", "description": "Profile sketch/curve name (closed)"},
+                        "center_curve": {"type": "string", "description": "Center curve sketch/curve name"},
+                    },
+                    "required": ["profile", "center_curve"],
+                },
+            },
+            {
+                "name": "catia_add_body",
+                "description": (
+                    "Add a new Body to the active part and make it the active body: new "
+                    "sketches and features go into it until catia_set_active_body changes "
+                    "it. Combine bodies with catia_boolean."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Optional body name"},
+                    },
+                },
+            },
+            {
+                "name": "catia_set_active_body",
+                "description": (
+                    "Choose the body that receives new sketches and features (by name, "
+                    "e.g. 'Body.2'). Omit body_name to go back to the part's main body."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "body_name": {"type": "string", "description": "Body name; omit for the main body"},
+                    },
+                },
+            },
+            {
+                "name": "catia_boolean",
+                "description": (
+                    "Boolean operation of a body into a target body (default: the part's "
+                    "main body): add (union), remove (subtract), intersect, or assemble. "
+                    "Reports the target volume before and after."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {
+                            "type": "string",
+                            "enum": ["add", "remove", "intersect", "assemble"],
+                            "description": "Boolean operation",
+                        },
+                        "body_name": {"type": "string", "description": "Body operated into the target"},
+                        "target_body": {
+                            "type": "string",
+                            "description": "Body receiving the operation (default: main body)",
+                        },
+                    },
+                    "required": ["operation", "body_name"],
+                },
+            },
+            {
+                "name": "catia_rename_feature",
+                "description": (
+                    "Rename a feature, sketch, body, geometrical set or GSD element of the "
+                    "active part."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Current name (e.g. 'Pad.1')"},
+                        "new_name": {"type": "string", "description": "New name"},
+                    },
+                    "required": ["name", "new_name"],
+                },
+            },
+            {
+                "name": "catia_set_feature_active",
+                "description": (
+                    "Activate or deactivate (suppress) a feature of the active part, then "
+                    "update the part. Deactivated features stay in the tree."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Feature name (e.g. 'Pocket.2')"},
+                        "active": {"type": "boolean", "description": "true = activate, false = deactivate"},
+                    },
+                    "required": ["name", "active"],
+                },
+            },
+            {
+                "name": "catia_set_visibility",
+                "description": "Show or hide elements of the active part (bodies, features, sketches, GSD elements, geometrical sets).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "description": "Element names",
+                        },
+                        "visible": {"type": "boolean", "description": "true = show, false = hide"},
+                    },
+                    "required": ["names", "visible"],
+                },
+            },
+            {
+                "name": "catia_set_color",
+                "description": "Set the display color (RGB 0-255) of elements of the active part.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "description": "Element names (bodies, features, GSD elements)",
+                        },
+                        "rgb": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0, "maximum": 255},
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "description": "[red, green, blue], 0-255",
+                        },
+                    },
+                    "required": ["names", "rgb"],
+                },
+            },
         ]
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
@@ -509,6 +676,24 @@ class PartDesignTools:
                 return self._list_faces(arguments.get("body_name"))
             case "catia_list_edges":
                 return self._list_edges()
+            case "catia_rib":
+                return self._sweep_feature("rib", arguments)
+            case "catia_slot":
+                return self._sweep_feature("slot", arguments)
+            case "catia_add_body":
+                return self._add_body(arguments.get("name"))
+            case "catia_set_active_body":
+                return self._set_active_body(arguments.get("body_name"))
+            case "catia_boolean":
+                return self._boolean(arguments)
+            case "catia_rename_feature":
+                return self._rename(arguments["name"], arguments["new_name"])
+            case "catia_set_feature_active":
+                return self._set_feature_active(arguments["name"], bool(arguments["active"]))
+            case "catia_set_visibility":
+                return self._set_visibility(arguments["names"], bool(arguments["visible"]))
+            case "catia_set_color":
+                return self._set_color(arguments["names"], arguments["rgb"])
             case _:
                 raise ValueError(f"Unknown part design tool: {tool_name}")
 
@@ -578,16 +763,7 @@ class PartDesignTools:
 
     def _body_volume_mm3(self, part: Any, body: Any) -> float | None:
         """Measure the body's solid volume in mm3, or None if unavailable."""
-        try:
-            doc = part.Parent
-            try:
-                spa = doc.GetWorkbench("SPAWorkbench")
-            except AttributeError:
-                spa = self.conn.app.GetWorkbench("SPAWorkbench")
-            ref = part.CreateReferenceFromObject(body)
-            return spa.GetMeasurable(ref).Volume * 1e9  # m3 -> mm3
-        except Exception:
-            return None
+        return self.measure.body_volume_mm3(part, body)
 
     def _pocket(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -707,45 +883,13 @@ class PartDesignTools:
             ) from e
 
     def _topo_reference(self, kind: str, index: int) -> Any:
-        """Resolve Face.N / Edge.N on the body's final shape to a Reference.
-
-        References come from the selection's Reference property because
-        CreateReferenceFromObject rejects HSO-resolved topology cells
-        (field-verified E_INVALIDARG). Indices match catia_list_faces /
-        catia_list_edges.
-        """
-        body = self.conn.get_active_part_body()
-        if body.Shapes.Count == 0:
-            raise RuntimeError("The active body has no solid shape yet.")
-        last_shape = body.Shapes.Item(body.Shapes.Count)
-        sel = self.conn.hso
-        try:
-            sel.Clear()
-            sel.Add(last_shape)
-            sel.Search(f"Topology.{kind},sel")
-            count = sel.Count
-            if index < 1 or index > count:
-                raise RuntimeError(
-                    f"{kind}.{index} is out of range: the final shape exposes "
-                    f"{count} {kind.lower()}(s). Use catia_list_faces / "
-                    "catia_list_edges to enumerate valid indices."
-                )
-            return sel.Item(index).Reference
-        finally:
-            try:
-                sel.Clear()
-            except Exception:
-                pass
+        """Resolve Face.N / Edge.N on the active body's final shape to a
+        Reference (indices match catia_list_faces / catia_list_edges)."""
+        return topology_reference(self.conn, kind, index)
 
     @staticmethod
     def _topo_index(name: str, kind: str) -> int:
-        m = re.match(rf"^{kind}\.(\d+)$", name or "")
-        if not m:
-            raise ValueError(
-                f"Expected an indexed name like '{kind}.1' (from "
-                f"catia_list_faces / catia_list_edges), got '{name}'."
-            )
-        return int(m.group(1))
+        return topology_index(name, kind)
 
     def _fillet(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -988,6 +1132,8 @@ class PartDesignTools:
         center = args.get("center") or [0.0, 0.0, 0.0]
         if len(center) != 3:
             raise ValueError("center must be [x, y, z] in mm")
+        if self.conn.is_3dx:
+            return self._circ_pattern_3dx(args, count, angular_spacing, axis, center)
         # Field-proven precondition: AddNewCircPattern fails with 0x80020009
         # when the patterned document itself contains GSD geometry.
         try:
@@ -1038,6 +1184,251 @@ class PartDesignTools:
             f"{angular_spacing} deg spacing around the {axis.upper()} axis "
             f"through {center}." + effect
         )
+
+    def _construction_geoset(self, part: Any) -> Any:
+        for hb in iter_geosets(part.HybridBodies):
+            if str(hb.Name) == "MCP_Construction":
+                return hb
+        geoset = part.HybridBodies.Add()
+        geoset.Name = "MCP_Construction"
+        return geoset
+
+    def _circ_pattern_3dx(
+        self, args: dict[str, Any], count: int, angular_spacing: float, axis: str, center: list[float]
+    ) -> str:
+        """3DEXPERIENCE circular pattern. The V5R20 donor-document recipe
+        needs file documents, which 3DEXPERIENCE does not have; the rotation
+        axis is a GSD line in the part itself, kept in a construction
+        geometrical set named MCP_Construction."""
+        part = self.conn.get_active_part()
+        body = self.conn.get_active_part_body()
+        sf = part.ShapeFactory
+        feature = self._get_last_shape(args.get("feature_name"))
+
+        hsf = part.HybridShapeFactory
+        geoset = self._construction_geoset(part)
+        dx, dy, dz = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1)}[axis]
+        cx, cy, cz = center
+        p1 = hsf.AddNewPointCoord(cx - 50 * dx, cy - 50 * dy, cz - 50 * dz)
+        geoset.AppendHybridShape(p1)
+        part.UpdateObject(p1)
+        p2 = hsf.AddNewPointCoord(cx + 50 * dx, cy + 50 * dy, cz + 50 * dz)
+        geoset.AppendHybridShape(p2)
+        part.UpdateObject(p2)
+        line = hsf.AddNewLinePtPt(
+            part.CreateReferenceFromObject(p1), part.CreateReferenceFromObject(p2)
+        )
+        geoset.AppendHybridShape(line)
+        part.UpdateObject(line)
+        axis_ref = part.CreateReferenceFromObject(line)
+        center_ref = part.CreateReferenceFromName("")
+
+        before = self._body_volume_mm3(part, body)
+        part.InWorkObject = body
+        try:
+            pattern = sf.AddNewCircPattern(
+                feature,
+                1, count,              # radial copies, angular copies
+                0.0, angular_spacing,  # radial step, angular step (deg)
+                1, 1,                  # position of the original
+                center_ref, axis_ref,  # rotation center (from axis line), axis
+                False,                 # reversed rotation axis
+                0.0,                   # rotation angle
+                False,                 # radius aligned
+            )
+            self._safe_update(part, pattern)
+        except Exception as e:
+            raise RuntimeError(
+                f"{e} The construction axis line '{line.Name}' remains in geometrical "
+                f"set '{geoset.Name}'; delete it if it is not needed."
+            ) from e
+        self.conn.refresh_display()
+        after = self._body_volume_mm3(part, body)
+        effect = ""
+        if before is not None and after is not None:
+            effect = f" Volume {before:.1f} -> {after:.1f} mm3."
+        return (
+            f"Circular pattern '{pattern.Name}' created: {count} instances, "
+            f"{angular_spacing} deg spacing around the {axis.upper()} axis through "
+            f"{center}. Axis line '{line.Name}' kept in geometrical set "
+            f"'{geoset.Name}'." + effect
+        )
+
+    def _profile_object(self, part: Any, name: str) -> Any:
+        return find_element(part, name)
+
+    def _sweep_feature(self, kind: str, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        body = self.conn.get_active_part_body()
+        sf = part.ShapeFactory
+        profile = self._profile_object(part, args["profile"])
+        center = self._profile_object(part, args["center_curve"])
+        before = self._body_volume_mm3(part, body)
+        part.InWorkObject = body
+        method = "AddNewRib" if kind == "rib" else "AddNewSlot"
+        try:
+            feature = getattr(sf, method)(profile, center)
+        except Exception:
+            # GSD curves (not sketches): the FromRef variant takes References.
+            feature = getattr(sf, method + "FromRef")(
+                part.CreateReferenceFromObject(profile), part.CreateReferenceFromObject(center)
+            )
+        self._safe_update(part, feature)
+        self.conn.refresh_display()
+        after = self._body_volume_mm3(part, body)
+        if before is not None and after is not None:
+            delta = after - before
+            if kind == "slot" and delta >= 0:
+                return (
+                    f"FEATURE_NO_EFFECT: slot '{feature.Name}' was created in the tree "
+                    f"but removed no material (volume stayed {before:.1f} mm3). Check "
+                    "that the profile sweeps through the solid."
+                )
+            if kind == "rib" and delta <= 0:
+                return (
+                    f"FEATURE_NO_EFFECT: rib '{feature.Name}' was created in the tree "
+                    f"but added no material (volume {before:.1f} -> {after:.1f} mm3)."
+                )
+            return (
+                f"{kind.capitalize()} '{feature.Name}' created along '{args['center_curve']}'. "
+                f"Volume {before:.1f} -> {after:.1f} mm3."
+            )
+        return (
+            f"{kind.capitalize()} '{feature.Name}' created along '{args['center_curve']}' "
+            "(volume verification unavailable)."
+        )
+
+    def _add_body(self, name: str | None) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        body = part.Bodies.Add()
+        if name:
+            body.Name = name
+        self.conn.set_active_body(str(body.Name))
+        part.Update()
+        return (
+            f"Body '{body.Name}' added and set as the active body: new sketches and "
+            "features go into it."
+        )
+
+    def _set_active_body(self, body_name: str | None) -> str:
+        self.conn.ensure_connected()
+        body = self.conn.set_active_body(body_name)
+        return f"Active body: '{body.Name}'."
+
+    _BOOLEAN_METHODS = {
+        "add": "AddNewAdd",
+        "remove": "AddNewRemove",
+        "intersect": "AddNewIntersect",
+        "assemble": "AddNewAssemble",
+    }
+
+    def _boolean(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        operation = args["operation"]
+        tool_body = body_by_name(part, args["body_name"])
+        target = body_by_name(part, args["target_body"]) if args.get("target_body") else part.MainBody
+        if str(tool_body.Name) == str(target.Name):
+            raise InvalidArgument("body_name and the target body must differ.")
+        before = self._body_volume_mm3(part, target)
+        part.InWorkObject = target
+        feature = getattr(part.ShapeFactory, self._BOOLEAN_METHODS[operation])(tool_body)
+        self._safe_update(part, feature)
+        self.conn.refresh_display()
+        after = self._body_volume_mm3(part, target)
+        effect = ""
+        if before is not None and after is not None:
+            effect = f" Target volume {before:.1f} -> {after:.1f} mm3."
+        return (
+            f"Boolean {operation} '{feature.Name}': '{tool_body.Name}' into "
+            f"'{target.Name}'.{effect}"
+        )
+
+    def _find_named(self, part: Any, name: str) -> Any:
+        """Body, feature, sketch, geometrical set or GSD element by name."""
+        for body in iter_items(part.Bodies):
+            if str(body.Name) == name:
+                return body
+            for collection in ("Shapes", "Sketches"):
+                try:
+                    return getattr(body, collection).Item(name)
+                except Exception:
+                    pass
+        for geoset in iter_geosets(part.HybridBodies):
+            if str(geoset.Name) == name:
+                return geoset
+        try:
+            return find_element(part, name)
+        except ObjectNotFound:
+            raise ObjectNotFound(
+                f"No body, feature, sketch, geometrical set or GSD element named "
+                f"'{name}' in the active part."
+            )
+
+    def _rename(self, name: str, new_name: str) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        obj = self._find_named(part, name)
+        obj.Name = new_name
+        return f"'{name}' renamed to '{obj.Name}'."
+
+    def _set_feature_active(self, name: str, active: bool) -> str:
+        self.conn.ensure_connected()
+        part = self.conn.get_active_part()
+        feature = self._find_named(part, name)
+        if active:
+            part.Activate(feature)
+        else:
+            part.Inactivate(feature)
+        try:
+            part.Update()
+        except Exception as e:
+            self.conn.refresh_display()
+            return (
+                f"'{name}' {'activated' if active else 'deactivated'}, but the part "
+                f"update failed afterwards ({e}); dependent features are in error."
+            )
+        self.conn.refresh_display()
+        return f"'{name}' {'activated' if active else 'deactivated'}; part updated."
+
+    def _select_named(self, names: list[str]) -> Any:
+        part = self.conn.get_active_part()
+        objects = [self._find_named(part, n) for n in names]
+        sel = self.conn.hso
+        sel.Clear()
+        for obj in objects:
+            sel.Add(obj)
+        return sel
+
+    def _set_visibility(self, names: list[str], visible: bool) -> str:
+        self.conn.ensure_connected()
+        sel = self._select_named(names)
+        try:
+            # CatVisPropertyShow: 0 = show, 1 = no show
+            sel.VisProperties.SetShow(0 if visible else 1)
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
+        self.conn.refresh_display()
+        return f"{'Shown' if visible else 'Hidden'}: {', '.join(names)}."
+
+    def _set_color(self, names: list[str], rgb: list[int]) -> str:
+        self.conn.ensure_connected()
+        r, g, b = (int(v) for v in rgb)
+        sel = self._select_named(names)
+        try:
+            sel.VisProperties.SetRealColor(r, g, b, 1)
+        finally:
+            try:
+                sel.Clear()
+            except Exception:
+                pass
+        self.conn.refresh_display()
+        return f"Color ({r}, {g}, {b}) applied to: {', '.join(names)}."
 
     def _user_pattern(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()

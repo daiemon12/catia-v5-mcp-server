@@ -1,7 +1,9 @@
-"""Sketcher tools for CATIA V5.
+"""Sketcher tools for CATIA V5 and CATIA 3DEXPERIENCE.
 
 2D sketch creation and editing: lines, circles, rectangles, arcs, splines, constraints.
 All dimensions are in millimeters. CATIA COM API uses millimeters natively.
+The Sketcher automation API (Sketches.Add, OpenEdition, Factory2D,
+Constraints) is the same on both platforms once the Part is resolved.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import json
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.references import element_or_face_reference
 
 # Plane name mapping
 PLANE_MAP = {
@@ -21,7 +24,7 @@ PLANE_MAP = {
 
 
 class SketcherTools:
-    """Tools for 2D sketch operations in CATIA V5."""
+    """Tools for 2D sketch operations in CATIA V5 and 3DEXPERIENCE."""
 
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
@@ -33,9 +36,10 @@ class SketcherTools:
             {
                 "name": "catia_create_sketch",
                 "description": (
-                    "Create a new 2D sketch on a reference plane (xy, yz, or zx). "
-                    "The sketch is opened for editing. You must close it with catia_close_sketch "
-                    "before creating 3D features."
+                    "Create a new 2D sketch on a reference plane (xy, yz, or zx), on a "
+                    "named plane element, or on a planar face of the solid. "
+                    "The sketch is created in the active body and opened for editing. "
+                    "You must close it with catia_close_sketch before creating 3D features."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -45,6 +49,14 @@ class SketcherTools:
                             "description": "Reference plane: 'xy' (front), 'yz' (right), 'zx' (top)",
                             "enum": ["xy", "yz", "zx"],
                             "default": "xy",
+                        },
+                        "support": {
+                            "type": "string",
+                            "description": (
+                                "Optional support overriding 'plane': a plane element name "
+                                "(e.g. 'Plane.1' from catia_gsd_plane_offset) or a planar "
+                                "face 'Face.N' from catia_list_faces"
+                            ),
                         },
                     },
                 },
@@ -231,7 +243,7 @@ class SketcherTools:
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
         match tool_name:
             case "catia_create_sketch":
-                return self._create_sketch(arguments.get("plane", "xy"))
+                return self._create_sketch(arguments.get("plane", "xy"), arguments.get("support"))
             case "catia_close_sketch":
                 return self._close_sketch()
             case "catia_sketch_line":
@@ -278,20 +290,23 @@ class SketcherTools:
                 "No active sketch. Use catia_create_sketch first to open a sketch."
             )
 
-    def _create_sketch(self, plane: str = "xy") -> str:
+    def _create_sketch(self, plane: str = "xy", support: str | None = None) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
 
-        # Get the reference plane
-        origin = part.OriginElements
-        plane_key = plane.lower()
-        if plane_key not in PLANE_MAP:
-            raise ValueError(f"Unknown plane '{plane}'. Use 'xy', 'yz', or 'zx'.")
+        if support:
+            ref = element_or_face_reference(self.conn, part, support)
+        else:
+            # Get the reference plane
+            origin = part.OriginElements
+            plane_key = plane.lower()
+            if plane_key not in PLANE_MAP:
+                raise ValueError(f"Unknown plane '{plane}'. Use 'xy', 'yz', or 'zx'.")
 
-        plane_attr = PLANE_MAP[plane_key]
-        ref_plane = getattr(origin, plane_attr)
-        ref = part.CreateReferenceFromObject(ref_plane)
+            plane_attr = PLANE_MAP[plane_key]
+            ref_plane = getattr(origin, plane_attr)
+            ref = part.CreateReferenceFromObject(ref_plane)
 
         # Create the sketch on the plane
         sketches = body.Sketches
@@ -302,8 +317,20 @@ class SketcherTools:
         self._sketch_part = part
         self._active_factory = sketch.OpenEdition()
 
+        try:
+            sketch_name = str(sketch.Name)
+        except Exception:
+            sketch_name = "sketch"
+        if support:
+            return (
+                f"Sketch '{sketch_name}' created on '{support}' in body '{body.Name}'. "
+                "Ready for geometry."
+            )
         plane_names = {"xy": "XY (front)", "yz": "YZ (right)", "zx": "ZX (top)"}
-        return f"Sketch created on {plane_names.get(plane_key, plane)} plane. Ready for geometry."
+        return (
+            f"Sketch '{sketch_name}' created on {plane_names.get(plane_key, plane)} plane. "
+            "Ready for geometry."
+        )
 
     def _close_sketch(self) -> str:
         if self._active_sketch is None:

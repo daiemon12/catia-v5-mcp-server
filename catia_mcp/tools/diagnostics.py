@@ -1,4 +1,4 @@
-"""Diagnostics tool for CATIA V5 installations.
+"""Diagnostics tool for CATIA V5 and CATIA 3DEXPERIENCE installations.
 
 Reports the exact CATIA release, and probes which automation APIs the
 running installation currently resolves. Installations differ: old
@@ -10,6 +10,10 @@ method that resolves can still fail at call time if a license is
 missing, so treat results as strong hints, not proof. This tool turns "what CATIA do you have and what
 works on it" into a single call whose JSON output can be pasted into a
 compatibility report or GitHub issue.
+
+On 3DEXPERIENCE it additionally probes the session services (create, open,
+save, search), the editor services (measure, inertia, product, drawing) and
+reads the CATMeasurableType enum from the installation's type library.
 """
 
 from __future__ import annotations
@@ -19,7 +23,9 @@ import os
 import sys
 from typing import Any
 
+from catia_mcp.automation import safe_get
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.introspect import find_enum
 
 # Factory methods probed on an active Part document. These lists mirror
 # the methods the real tools call, so a probe that fails here fails the
@@ -40,6 +46,14 @@ _SHAPE_FACTORY_METHODS = [
     "AddNewThickness",
     "AddNewThickSurface",
     "AddNewCloseSurface",
+    "AddNewRib",
+    "AddNewSlot",
+    "AddNewAdd",
+    "AddNewRemove",
+    "AddNewIntersect",
+    "AddNewAssemble",
+    "AddNewUserPattern",
+    "AddNewHoleFromSketch",
 ]
 
 _HYBRID_SHAPE_FACTORY_METHODS = [
@@ -63,6 +77,21 @@ _HYBRID_SHAPE_FACTORY_METHODS = [
     "AddNewHybridSplit",
     "AddNewHybridTrim",
     "AddNewSymmetry",
+    "AddNewTranslate",
+    "AddNewRotate",
+    "AddNewPointOnCurveFromPercent",
+    "AddNewExtract",
+    "AddNewFilletBiTangent",
+]
+
+_SESSION_SERVICES_3DX = ["PLMNewService", "PLMOpenService", "PLMPropagateService", "Search"]
+_EDITOR_SERVICES_3DX = [
+    "MeasurableService",
+    "InertiaService",
+    "PLMProductService",
+    "PLMProductContext",
+    "CATDrawingGenService",
+    "DrawingService",
 ]
 
 
@@ -77,15 +106,16 @@ class DiagnosticsTools:
             {
                 "name": "catia_diagnose",
                 "description": (
-                    "Diagnose the running CATIA V5 installation: exact version, "
-                    "release and service pack, Python/pywin32 environment, and a "
-                    "probe of which automation APIs (Part Design ShapeFactory, "
-                    "GSD HybridShapeFactory, SPAWorkbench measurement) are "
-                    "actually exposed. Run this first when tools fail with "
+                    "Diagnose the running CATIA installation (V5 or 3DEXPERIENCE): "
+                    "detected platform, exact version, release and service pack, "
+                    "Python/pywin32 environment, and a probe of which automation APIs "
+                    "(Part Design ShapeFactory, GSD HybridShapeFactory, measurement; on "
+                    "3DEXPERIENCE also PLM session and editor services) are actually "
+                    "exposed. Run this first when tools fail with "
                     "UNSUPPORTED_CAPABILITY, and include its output when "
                     "reporting compatibility issues. Probing factories requires "
-                    "an active Part document; without one, only "
-                    "application-level info is reported."
+                    "an active Part; without one, only application-level info is "
+                    "reported."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -107,8 +137,13 @@ class DiagnosticsTools:
 
         report: dict[str, Any] = {"python": self._python_info(app)}
         report["catia"] = self._catia_info(app)
-        report["workbenches"] = self._workbench_probe()
-        report["factories"] = self._factory_probe()
+        report["catia"]["platform"] = self.conn.platform_label
+        if self.conn.is_3dx:
+            report["plm"] = self._plm_probe(app)
+            report["factories"] = self._factory_probe()
+        else:
+            report["workbenches"] = self._workbench_probe()
+            report["factories"] = self._factory_probe()
         report["notes"] = self._notes(report)
 
         return json.dumps(report, indent=2)
@@ -178,24 +213,53 @@ class DiagnosticsTools:
                 probes[wb] = f"unavailable: {e}"
         return probes
 
+    def _plm_probe(self, app: Any) -> dict[str, Any]:
+        probe: dict[str, Any] = {}
+        services = {}
+        for name in _SESSION_SERVICES_3DX:
+            try:
+                services[name] = "available" if app.GetSessionService(name) is not None else "none"
+            except Exception as e:
+                services[name] = f"unavailable: {e}"
+        probe["session_services"] = services
+        try:
+            editor = app.ActiveEditor
+        except Exception:
+            editor = None
+        if editor is None:
+            probe["editor"] = "No active editor: create or open content, then re-run."
+            return probe
+        obj = safe_get(editor, "ActiveObject")
+        probe["active_object"] = self.conn.classify(obj)
+        editor_services = {}
+        for name in _EDITOR_SERVICES_3DX:
+            try:
+                editor_services[name] = "available" if editor.GetService(name) is not None else "none"
+            except Exception as e:
+                editor_services[name] = f"unavailable: {e}"
+        probe["editor_services"] = editor_services
+        try:
+            measure_service = editor.GetService("MeasurableService")
+            enum = find_enum([measure_service, app], "CATMeasurableType")
+            probe["CATMeasurableType"] = enum or "not found in the type library"
+        except Exception as e:
+            probe["CATMeasurableType"] = f"unavailable: {e}"
+        return probe
+
     def _factory_probe(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
 
         doc = None
+        part = None
         try:
             doc = self.conn.active_document
+            part = self.conn.get_active_part()
         except Exception:
             pass
-        part = None
-        if doc is not None:
-            try:
-                part = doc.Part
-            except Exception:
-                pass
         if part is None:
             result["skipped"] = (
-                "No active Part document. Create or open a CATPart, then run "
-                "catia_diagnose again to probe the factories."
+                "No active Part. Create or open a Part (V5 CATPart, 3DEXPERIENCE 3D "
+                "Part or 3D Shape), then run catia_diagnose again to probe the factories."
             )
             return result
 
@@ -205,7 +269,8 @@ class DiagnosticsTools:
         result["hybrid_shape_factory"] = self._probe_methods(
             part, "HybridShapeFactory", _HYBRID_SHAPE_FACTORY_METHODS
         )
-        result["measurable"] = self._measurable_probe(doc, part)
+        if not self.conn.is_3dx:
+            result["measurable"] = self._measurable_probe(doc, part)
         return result
 
     def _measurable_probe(self, doc: Any, part: Any) -> dict[str, Any]:
@@ -323,8 +388,27 @@ class DiagnosticsTools:
                     f"{wb_name} is unavailable; measurement tools "
                     "(distance, inertia, bounding box) will fail."
                 )
+        plm = report.get("plm")
+        if plm:
+            for name, status in plm.get("session_services", {}).items():
+                if str(status).startswith("unavailable"):
+                    notes.append(
+                        f"Session service {name} is unavailable: the matching tools "
+                        "(new/open/save/search) will fail. Check that you are logged in "
+                        "to the platform."
+                    )
+            for name, status in plm.get("editor_services", {}).items():
+                if name in ("MeasurableService", "InertiaService") and str(status).startswith("unavailable"):
+                    notes.append(f"{name} is unavailable for the active object: measurement tools will fail.")
+            notes.append(
+                "3DEXPERIENCE: creating a 3D Part or Physical Product from automation "
+                "needs an extra licence/role on many sites (3D Shape and Drawing always "
+                "work); STEP export needs the exchange licence. The full automation "
+                "reference is DSYAutomation.chm in win_b64\\code\\bin of the "
+                "installation; catia_inspect_api reads the same API live."
+            )
         release = report.get("catia", {}).get("release")
-        if isinstance(release, int) and release < 26:
+        if isinstance(release, int) and release < 26 and not self.conn.is_3dx:
             notes.append(
                 f"CATIA release R{release} is older than the project's "
                 "tested baseline (R2016 = R26). Core document/sketch/GSD "

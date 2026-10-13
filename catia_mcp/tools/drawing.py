@@ -1,4 +1,4 @@
-"""Drafting (Drawing) tools for CATIA V5.
+"""Drafting (Drawing) tools for CATIA V5 and CATIA 3DEXPERIENCE.
 
 Built from field-validated automation probes run on CATIA V5R20 by
 contributor ESE3X: Drawing document creation, generative view
@@ -13,14 +13,30 @@ constraints, CATIA places the dimensions). The manual Add path only
 works on 2D geometry drawn in the view. Projection, section and detail
 views, text and tables are provided; frame/title-block generators are
 the next step.
+
+3DEXPERIENCE: a drawing is created with PLMNewService ("Drawing") and the
+editor's ActiveObject is a DrawingRoot (Sheets, ActiveSheet) instead of a
+DrawingDocument. Texts, tables and dimensions keep the V5 API. Generative
+views are created by the DrawingDefineGenView factory
+(Sheet.Views.DrawingDefineGenView) that replaced V5's
+DrawingViewGenerativeBehavior; its signatures are not publicly documented,
+so the factory call is bound from the installation's type information
+(argument kinds and order) and refused with the discovered signature when
+the binding is not exact. Where a release still exposes
+view.GenerativeBehavior, the V5 recipe is used as is.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
+from catia_mcp.automation import call_out_object, iter_items, name_exists, safe_get
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.errors import AmbiguousTarget, ObjectNotFound, UnsupportedCapability, after_mutation
+from catia_mcp.introspect import method_params
+from catia_mcp.plm import PLMSession
 from catia_mcp.tools.measurement import read_measurable_array
 
 # DefineFrontView takes the two sheet-plane axis vectors expressed in the
@@ -37,10 +53,11 @@ _PLANE_VECTORS = {
 
 
 class DraftingTools:
-    """Tools for CATIA V5 Drawing documents (generative drafting)."""
+    """Tools for CATIA drawings (generative drafting), V5 and 3DEXPERIENCE."""
 
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
+        self.plm = PLMSession(connection)
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         return [
@@ -309,6 +326,15 @@ class DraftingTools:
                 },
             },
             {
+                "name": "catia_drawing_list_views",
+                "description": (
+                    "List the sheets of the active drawing and the views of each sheet "
+                    "(name, position, scale, generative or not), to pick view_name / "
+                    "parent_view values."
+                ),
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
                 "name": "catia_drawing_add_view",
                 "description": (
                     "Add a generative front view of an open Part to the "
@@ -398,17 +424,74 @@ class DraftingTools:
                 return self._list_view_geometry(arguments)
             case "catia_drawing_add_dimension":
                 return self._add_dimension(arguments)
+            case "catia_drawing_list_views":
+                return self._list_views()
             case _:
                 raise ValueError(f"Unknown drafting tool: {tool_name}")
 
+    @staticmethod
+    def _active_sheet(drawing: Any) -> Any:
+        """V5 DrawingDocument.Sheets.ActiveSheet; 3DEXPERIENCE DrawingRoot
+        exposes the same chain and also DrawingRoot.ActiveSheet."""
+        try:
+            return drawing.Sheets.ActiveSheet
+        except Exception:
+            return drawing.ActiveSheet
+
     def _new_drawing(self) -> str:
         self.conn.ensure_connected()
+        if self.conn.is_3dx:
+            self.plm.create("Drawing")
+            with after_mutation():
+                drawing = self.conn.active_object()
+                sheet = self._active_sheet(drawing)
+            return (
+                f"Drawing created in the session: '{self.plm.title_of(drawing)}' (active "
+                f"sheet '{sheet.Name}'). Use catia_drawing_add_view to project a 3D part "
+                "open in another editor; save with catia_save_document."
+            )
         drawing = self.conn.documents.Add("Drawing")
         sheet = drawing.Sheets.ActiveSheet
         return (
             f"Drawing created: '{drawing.Name}' (active sheet '{sheet.Name}', "
             f"{drawing.Sheets.Count} sheet(s)). Use catia_drawing_add_view "
             "to project a part onto it."
+        )
+
+    # ── 3DEXPERIENCE editors ──
+
+    def _editor_objects(self) -> list[tuple[Any, Any]]:
+        rows = []
+        for editor in self.plm.editors():
+            obj = safe_get(editor, "ActiveObject")
+            if obj is not None:
+                rows.append((editor, obj))
+        return rows
+
+    def _find_source_3dx(self, part_name: str | None) -> Any:
+        """3D object (Part or root occurrence) shown in another editor."""
+        candidates = [
+            (editor, obj) for editor, obj in self._editor_objects()
+            if self.conn.classify(obj) in ("part", "product")
+        ]
+        titles = [self.plm.title_of(obj) for _, obj in candidates]
+        if part_name:
+            matches = [c for c, t in zip(candidates, titles) if t == part_name] or [
+                c for c, t in zip(candidates, titles) if part_name in t
+            ]
+            if len(matches) == 1:
+                return matches[0][1]
+            if not matches:
+                raise ObjectNotFound(
+                    f"No open 3D editor titled '{part_name}'. Open 3D content: "
+                    f"{', '.join(titles) or 'none'}."
+                )
+            raise AmbiguousTarget(f"'{part_name}' matches several editors: {', '.join(titles)}.")
+        if len(candidates) == 1:
+            return candidates[0][1]
+        raise AmbiguousTarget(
+            "Pass 'part_name' (the title) to pick the 3D content to project. Open 3D "
+            f"content: {', '.join(titles) or 'none'}."
         )
 
     def _find_part_document(self, part_name: str | None) -> Any:
@@ -439,6 +522,20 @@ class DraftingTools:
         )
 
     def _find_active_drawing(self) -> Any:
+        if self.conn.is_3dx:
+            try:
+                active = self.conn.active_object()
+                if self.conn.classify(active) == "drawing":
+                    return active
+            except Exception:
+                pass
+            drawings = [obj for _, obj in self._editor_objects() if self.conn.classify(obj) == "drawing"]
+            if len(drawings) == 1:
+                return drawings[0]
+            raise ObjectNotFound(
+                "No active Drawing editor. Run catia_new_drawing first, or activate "
+                "the drawing's window with catia_activate_document."
+            )
         app = self.conn.app
         try:
             active = app.ActiveDocument
@@ -463,7 +560,8 @@ class DraftingTools:
 
     def _add_view(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
-        app = self.conn.app
+        if self.conn.is_3dx:
+            return self._add_view_3dx(args)
         part_doc = self._find_part_document(args.get("part_name"))
         drawing = self._find_active_drawing()
 
@@ -504,7 +602,7 @@ class DraftingTools:
                     pass
         angle = args.get("angle")
 
-        sheet = drawing.Sheets.ActiveSheet
+        sheet = self._active_sheet(drawing)
         view = sheet.Views.Add(args.get("name") or "Front View")
 
         gb = view.GenerativeBehavior
@@ -556,7 +654,7 @@ class DraftingTools:
 
     def _find_view(self, view_name: str | None) -> Any:
         drawing = self._find_active_drawing()
-        views = drawing.Sheets.ActiveSheet.Views
+        views = self._active_sheet(drawing).Views
         if view_name:
             for i in range(1, views.Count + 1):
                 v = views.Item(i)
@@ -723,15 +821,23 @@ class DraftingTools:
             view.Activate()
         except Exception:
             pass
-        sheet = drawing.Sheets.ActiveSheet
-        active_doc = str(app.ActiveDocument.Name)
-        if active_doc != str(drawing.Name):
-            raise RuntimeError(
-                f"Could not activate drawing '{drawing.Name}' (active "
-                f"document is '{active_doc}'); GenerateDimensions would "
-                "silently do nothing. Bring the drawing window to front and "
-                "retry."
-            )
+        sheet = self._active_sheet(drawing)
+        if self.conn.is_3dx:
+            if self.conn.classify(self.conn.active_object()) != "drawing":
+                raise RuntimeError(
+                    "The drawing is not the active editor; GenerateDimensions would "
+                    "silently do nothing. Activate the drawing window with "
+                    "catia_activate_document and retry."
+                )
+        else:
+            active_doc = str(app.ActiveDocument.Name)
+            if active_doc != str(drawing.Name):
+                raise RuntimeError(
+                    f"Could not activate drawing '{drawing.Name}' (active "
+                    f"document is '{active_doc}'); GenerateDimensions would "
+                    "silently do nothing. Bring the drawing window to front and "
+                    "retry."
+                )
         try:
             active_view = str(sheet.Views.ActiveView.Name)
         except Exception:
@@ -791,7 +897,7 @@ class DraftingTools:
         title blocks can be filled on an otherwise empty sheet."""
         if view_name:
             return self._find_view(view_name)
-        views = self._find_active_drawing().Sheets.ActiveSheet.Views
+        views = self._active_sheet(self._find_active_drawing()).Views
         if views.Count >= 3:
             return views.Item(views.Count)
         return views.Item(2) if views.Count >= 2 else views.Item(1)
@@ -866,7 +972,7 @@ class DraftingTools:
             raise ValueError(f"Unknown direction '{direction}'. Use right, left, top, bottom or rear.")
         gap = float(args.get("gap", 100.0))
         drawing = self._find_active_drawing()
-        sheet = drawing.Sheets.ActiveSheet
+        sheet = self._active_sheet(drawing)
         parent = self._parent_generative_view(args.get("parent_view"))
 
         # Placement follows the sheet's projection method: third angle puts
@@ -886,14 +992,27 @@ class DraftingTools:
         dx, dy = offsets[direction]
         px, py, pscale = self._parent_placement(parent)
 
-        def define(view: Any) -> None:
-            view.GenerativeBehavior.DefineProjectionView(
-                parent.GenerativeBehavior, _PROJECTION_TYPES[direction]
+        if self._uses_factory(parent):
+            view = self._factory_view(
+                sheet, "DefineProjectionView",
+                {
+                    "object": [parent],
+                    "int": [_PROJECTION_TYPES[direction]],
+                    "double": [args.get("x", px + dx), args.get("y", py + dy)],
+                    "string": [args.get("name") or f"{direction} view"],
+                },
+                args.get("name") or f"{direction} view",
+                args.get("x", px + dx), args.get("y", py + dy), pscale,
             )
+        else:
+            def define(view: Any) -> None:
+                view.GenerativeBehavior.DefineProjectionView(
+                    parent.GenerativeBehavior, _PROJECTION_TYPES[direction]
+                )
 
-        view = self._create_derived_view(sheet, parent, args.get("name") or f"{direction} view", define)
-        self._place(view, args.get("x", px + dx), args.get("y", py + dy), pscale)
-        view.GenerativeBehavior.Update()
+            view = self._create_derived_view(sheet, parent, args.get("name") or f"{direction} view", define)
+            self._place(view, args.get("x", px + dx), args.get("y", py + dy), pscale)
+            view.GenerativeBehavior.Update()
         self.conn.refresh_display()
         method = "first angle" if first_angle else "third angle"
         return (
@@ -916,20 +1035,34 @@ class DraftingTools:
         if side not in (0, 1):
             raise ValueError("side must be 0 (clockwise) or 1 (counterclockwise)")
         drawing = self._find_active_drawing()
-        sheet = drawing.Sheets.ActiveSheet
+        sheet = self._active_sheet(drawing)
         parent = self._parent_generative_view(args.get("parent_view"))
         px, py, pscale = self._parent_placement(parent)
 
-        def define(view: Any) -> None:
-            # DefineSectionView(iProfile, iSectionType, iProfileType,
-            # iSideToDraw, iParentGB); the profile is an input safearray.
-            view.GenerativeBehavior.DefineSectionView(
-                profile, section_type, profile_type, side, parent.GenerativeBehavior
+        if self._uses_factory(parent):
+            view = self._factory_view(
+                sheet, "DefineSectionView",
+                {
+                    "array": [profile],
+                    "variant": [profile],
+                    "string": [section_type, profile_type, args.get("name") or "section view"],
+                    "int": [side],
+                    "object": [parent],
+                },
+                args.get("name") or "section view",
+                args.get("x", px + 150.0), args.get("y", py), pscale,
             )
+        else:
+            def define(view: Any) -> None:
+                # DefineSectionView(iProfile, iSectionType, iProfileType,
+                # iSideToDraw, iParentGB); the profile is an input safearray.
+                view.GenerativeBehavior.DefineSectionView(
+                    profile, section_type, profile_type, side, parent.GenerativeBehavior
+                )
 
-        view = self._create_derived_view(sheet, parent, args.get("name") or "section view", define)
-        self._place(view, args.get("x", px + 150.0), args.get("y", py), pscale)
-        view.GenerativeBehavior.Update()
+            view = self._create_derived_view(sheet, parent, args.get("name") or "section view", define)
+            self._place(view, args.get("x", px + 150.0), args.get("y", py), pscale)
+            view.GenerativeBehavior.Update()
         self.conn.refresh_display()
         return (
             f"{section_type} '{view.Name}' from '{parent.Name}' added to sheet "
@@ -943,22 +1076,203 @@ class DraftingTools:
             raise ValueError("radius must be positive")
         factor = float(args.get("scale", 2.0))
         drawing = self._find_active_drawing()
-        sheet = drawing.Sheets.ActiveSheet
+        sheet = self._active_sheet(drawing)
         parent = self._parent_generative_view(args.get("parent_view"))
         px, py, pscale = self._parent_placement(parent)
 
-        def define(view: Any) -> None:
-            view.GenerativeBehavior.DefineCircularDetailView(cx, cy, radius, parent.GenerativeBehavior)
+        if self._uses_factory(parent):
+            view = self._factory_view(
+                sheet, "DefineCircularDetailView",
+                {
+                    "double": [cx, cy, radius],
+                    "object": [parent],
+                    "string": [args.get("name") or "detail view"],
+                },
+                args.get("name") or "detail view",
+                args.get("x", px + 150.0), args.get("y", py + 100.0), factor * pscale,
+            )
+            try:
+                applied = float(view.Scale)
+            except Exception:
+                applied = None
+        else:
+            def define(view: Any) -> None:
+                view.GenerativeBehavior.DefineCircularDetailView(cx, cy, radius, parent.GenerativeBehavior)
 
-        view = self._create_derived_view(sheet, parent, args.get("name") or "detail view", define)
-        applied = self._place(view, args.get("x", px + 150.0), args.get("y", py + 100.0), factor * pscale)
-        view.GenerativeBehavior.Update()
+            view = self._create_derived_view(sheet, parent, args.get("name") or "detail view", define)
+            applied = self._place(view, args.get("x", px + 150.0), args.get("y", py + 100.0), factor * pscale)
+            view.GenerativeBehavior.Update()
         self.conn.refresh_display()
         scale_note = f"scale {applied:g}" if applied else "scale unchanged (CATIA kept the parent scale)"
         return (
             f"Detail view '{view.Name}' of '{parent.Name}' (r={radius} mm at "
             f"({cx}, {cy}), {scale_note}) added."
         )
+
+    # ── 3DEXPERIENCE generative view factory ──
+
+    def _uses_factory(self, view: Any) -> bool:
+        """3DEXPERIENCE releases without DrawingViewGenerativeBehavior create
+        generative views through Views.DrawingDefineGenView."""
+        return self.conn.is_3dx and not name_exists(view, "GenerativeBehavior")
+
+    def _bind_factory_call(self, factory: Any, method: str, pools: dict[str, list[Any]]) -> Any:
+        """Call factory.method with arguments bound by kind, in signature
+        order, from the installation's type information. Refuses (with the
+        discovered signature) unless every required parameter binds."""
+        params = method_params(factory, method)
+        if params is None:
+            raise UnsupportedCapability(
+                f"DrawingDefineGenView.{method} is not exposed (or has no type information) "
+                "on this installation. Inspect it with catia_inspect_api path="
+                "'document.ActiveObject.ActiveSheet.Views.DrawingDefineGenView'."
+            )
+        signature = f"{method}(" + ", ".join(
+            f"{p['name']}: {p['type']}{' out' if p['out'] else ''}" for p in params
+        ) + ")"
+        inputs = [p for p in params if not p["out"]]
+        outputs = [p for p in params if p["out"]]
+        if len(outputs) > 1 or (outputs and params[-1] is not outputs[0]):
+            raise UnsupportedCapability(f"Unsupported factory signature {signature}.")
+        remaining = {kind: list(values) for kind, values in pools.items()}
+        args: list[Any] = []
+        for param in inputs:
+            pool = remaining.get(param["type"])
+            if not pool:
+                if param["optional"]:
+                    break
+                raise UnsupportedCapability(
+                    f"Cannot bind parameter '{param['name']}' ({param['type']}) of {signature}: "
+                    "the signature differs from what this tool knows how to fill. Create "
+                    "the view in the UI, or script it with catia_run_script using this "
+                    "signature."
+                )
+            args.append(pool.pop(0))
+        if outputs:
+            return call_out_object(self.conn.app, factory, method, *args)
+        return getattr(factory, method)(*args)
+
+    def _factory_view(
+        self,
+        sheet: Any,
+        method: str,
+        pools: dict[str, list[Any]],
+        name: str,
+        x: float,
+        y: float,
+        scale: float | None = None,
+    ) -> Any:
+        views = sheet.Views
+        before = int(views.Count)
+        factory = views.DrawingDefineGenView
+        view = self._bind_factory_call(factory, method, pools)
+        if view is None or not name_exists(view, "Name"):
+            if int(views.Count) <= before:
+                raise RuntimeError(f"DrawingDefineGenView.{method} created no view.")
+            view = views.Item(views.Count)
+        try:
+            view.Name = name
+        except Exception:
+            pass
+        self._place(view, x, y, scale)
+        for update in (
+            lambda: view.Update(),
+            lambda: self._find_active_drawing().Update(),
+        ):
+            try:
+                update()
+                break
+            except Exception:
+                continue
+        return view
+
+    def _add_view_3dx(self, args: dict[str, Any]) -> str:
+        if args.get("face") or args.get("body_name"):
+            raise UnsupportedCapability(
+                "Face-driven and single-body views use V5-only APIs (SPAWorkbench "
+                "GetPlane, GenerativeBehavior.Document = Body). On 3DEXPERIENCE pass "
+                "'plane' instead."
+            )
+        plane = (args.get("plane") or "xy").lower()
+        if plane not in _PLANE_VECTORS:
+            raise ValueError(f"Unknown plane '{plane}'. Use 'xy', 'yz', or 'zx'.")
+        vectors = list(_PLANE_VECTORS[plane])
+        source = self._find_source_3dx(args.get("part_name"))
+        source_title = self.plm.title_of(source)
+        drawing = self._find_active_drawing()
+        sheet = self._active_sheet(drawing)
+        views = sheet.Views
+        name = args.get("name") or "Front View"
+        x, y = args.get("x", 300), args.get("y", 150)
+
+        if views.Count >= 1 and name_exists(views.Item(1), "GenerativeBehavior"):
+            route = "GenerativeBehavior"
+            view = views.Add(name)
+            try:
+                gb = view.GenerativeBehavior
+                try:
+                    gb.Document = source
+                except Exception:
+                    gb.Document = self.plm.plm_object_of(source)
+                gb.DefineFrontView(*vectors)
+                view.x = x
+                view.y = y
+                gb.Update()
+            except Exception:
+                try:
+                    views.Remove(view.Name)
+                except Exception:
+                    pass
+                raise
+        else:
+            route = "DrawingDefineGenView"
+            view = self._factory_view(
+                sheet, "DefineFrontView",
+                {"object": [source], "double": vectors, "string": [name]},
+                name, x, y,
+            )
+        if args.get("angle"):
+            import math as _math
+
+            try:
+                view.Angle = _math.radians(args["angle"])
+            except Exception:
+                pass
+        self.conn.refresh_display()
+        return (
+            f"View '{safe_get(view, 'Name', name)}' of '{source_title}' added to sheet "
+            f"'{sheet.Name}' ({plane.upper()} projection, {route})."
+        )
+
+    def _list_views(self) -> str:
+        self.conn.ensure_connected()
+        drawing = self._find_active_drawing()
+        try:
+            active_name = str(self._active_sheet(drawing).Name)
+        except Exception:
+            active_name = None
+        sheets = []
+        for sheet in iter_items(drawing.Sheets):
+            views = []
+            for i, view in enumerate(iter_items(sheet.Views), start=1):
+                row: dict[str, Any] = {"index": i, "name": str(safe_get(view, "Name", "<unnamed>"))}
+                try:
+                    row["x"] = round(float(view.x), 2)
+                    row["y"] = round(float(view.y), 2)
+                except Exception:
+                    pass
+                try:
+                    row["scale"] = float(view.Scale)
+                except Exception:
+                    pass
+                try:
+                    row["generative"] = bool(view.IsGenerative())
+                except Exception:
+                    pass
+                views.append(row)
+            name = str(safe_get(sheet, "Name", "<sheet>"))
+            sheets.append({"name": name, "active": name == active_name, "views": views})
+        return json.dumps({"sheets": sheets}, indent=2, ensure_ascii=False)
 
     def _add_text(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()

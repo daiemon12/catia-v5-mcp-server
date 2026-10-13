@@ -1,16 +1,23 @@
-"""Export tools for CATIA V5.
+"""Export tools for CATIA V5 and CATIA 3DEXPERIENCE.
 
 Export to STEP, IGES, STL, 3DXML, and other formats.
-Also includes screenshot capture.
+Also includes screenshot capture and view control, which use the
+Window/Viewer API shared by both platforms.
+
+3DEXPERIENCE content lives in the database, not in documents, and its
+automation API documents no file export for it; catia_export uses
+Document.ExportData where the installation still exposes a document and
+otherwise reports UNSUPPORTED_CAPABILITY with the manual route.
 """
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
+from catia_mcp.automation import name_exists, safe_get
 from catia_mcp.connection import CATIAConnection
+from catia_mcp.errors import UnsupportedCapability
 
 # CATIA export format identifiers
 FORMAT_MAP = {
@@ -28,7 +35,7 @@ FORMAT_MAP = {
 
 
 class ExportTools:
-    """Tools for exporting CATIA V5 data to external formats."""
+    """Tools for exporting CATIA data to external formats."""
 
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
@@ -40,7 +47,10 @@ class ExportTools:
                 "description": (
                     "Export the active document to a file. "
                     "Supported formats: STEP (.stp), IGES (.igs), STL (.stl), "
-                    "3DXML (.3dxml), VRML (.wrl), PDF (2D drawings)."
+                    "3DXML (.3dxml), VRML (.wrl), PDF (2D drawings). On 3DEXPERIENCE "
+                    "this works only where the installation exposes a document with "
+                    "ExportData; otherwise use CATIA's Export command (needs the "
+                    "exchange licence, e.g. ST1 for STEP)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -140,9 +150,25 @@ class ExportTools:
             case _:
                 raise ValueError(f"Unknown export tool: {tool_name}")
 
+    def _export_target(self) -> Any:
+        if not self.conn.is_3dx:
+            return self.conn.active_document
+        app = self.conn.app
+        doc = safe_get(app, "ActiveDocument") if name_exists(app, "ActiveDocument") else None
+        if doc is not None and name_exists(doc, "ExportData"):
+            return doc
+        raise UnsupportedCapability(
+            "3DEXPERIENCE automation exposes no file export for database content on "
+            "this installation (no document with ExportData). Use CATIA's Export "
+            "command (Action bar / 3DEXPERIENCE menu > Export, STEP needs the ST1 "
+            "licence), or look for an export service in your release with "
+            "catia_inspect_api path='app' filter='Export'. catia_screenshot works on "
+            "3DEXPERIENCE."
+        )
+
     def _export(self, file_path: str, fmt: str | None = None) -> str:
         self.conn.ensure_connected()
-        doc = self.conn.active_document
+        doc = self._export_target()
 
         # Determine format from extension if not specified
         if fmt is None:
