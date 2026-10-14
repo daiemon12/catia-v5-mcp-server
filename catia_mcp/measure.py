@@ -14,8 +14,17 @@ out-parameters, in mm), and
 returning an Inertia object (GetMass, GetCOGPosition x, y, z,
 GetInertiaMatrix array). CATMeasurableType values differ between releases,
 so they are read from the installation's type library, with a bounded probe
-as fallback. Volume and area are converted from MKS like V5; this unit
-convention is not yet live-validated on 3DEXPERIENCE and results say so.
+as fallback. GetMeasurable returns whichever measurable type is asked for,
+whatever the element (live-observed on R428), so the type is picked by its
+enum name; trying codes is only the fallback when the enum is unreadable.
+
+Minimum distance has no V5-style GetMinimumDistance there: it is
+MeasurableBetween.DistanceMinTo(other, otherAxisSystem, oDistance, 6 point
+coordinates), the axis system being 12 values (origin, 3 axes).
+
+Units, live-checked on 3DEXPERIENCE R428 SP6 against a 100 x 60 x 40 mm
+block: volume and area come back in MKS (converted like V5); coordinates and
+DistanceMinTo come back in mm.
 """
 
 from __future__ import annotations
@@ -33,19 +42,25 @@ M2_TO_MM2 = 1e6
 M3_TO_MM3 = 1e9
 
 UNIT_NOTE_3DX = (
-    "3DEXPERIENCE: volume/area converted from MKS (m3/m2) as on V5; coordinates "
-    "taken as mm. Not yet live-validated on 3DEXPERIENCE: check one known part."
+    "3DEXPERIENCE: volume/area converted from MKS (m3/m2) as on V5; coordinates and "
+    "distances are mm. Live-checked on R428 SP6 against a known block; other releases "
+    "may differ."
 )
 
 # Member names that identify each kind of typed measurable on 3DEXPERIENCE.
+# The key is also matched against the CATMeasurableType names
+# (CAAMeasurableVolume, CAAMeasurableBetween, ... on R428).
 _KIND_MEMBERS = {
     "volume": ("GetVolume", "Volume"),
     "surface": ("GetArea", "Area"),
     "point": ("GetPoint",),
     "plane": ("GetPlane",),
     "curve": ("GetLength", "Length"),
-    "distance": ("GetMinimumDistance",),
+    "between": ("DistanceMinTo",),
 }
+
+# Axis system of an element measured in the part's own frame: origin, X, Y, Z.
+_IDENTITY_AXIS = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
 _VBS_INERTIA_V5 = (
     "Public Function catia_mcp_inertia(oBody)\n"
@@ -201,7 +216,10 @@ class Measurer:
     def cog_mm(self, part: Any, obj: Any) -> list[float]:
         if self.conn.is_3dx:
             measurable = self._measurable_any_target(part, obj, "volume")
-            return self._triple(measurable, "GetCOG")
+            # R428 type information: MeasurableVolume.GetCOfG(oX, oY, oZ);
+            # GetCOG (the V5 name) is kept for releases that expose it.
+            method = "GetCOfG" if name_exists(measurable, "GetCOfG") else "GetCOG"
+            return self._triple(measurable, method)
         ref = part.CreateReferenceFromObject(obj)
         return call_fill_array(self.conn.app, self.spa_workbench().GetMeasurable(ref), "GetCOG", 3)
 
@@ -221,13 +239,33 @@ class Measurer:
                 return [float(v) for v in call_out_values(self.conn.app, measurable, "GetPlane", 9)]
         return call_fill_array(self.conn.app, self.spa_workbench().GetMeasurable(ref), "GetPlane", 9)
 
-    def min_distance_mm(self, ref1: Any, ref2: Any) -> float:
+    def min_distance(self, ref1: Any, ref2: Any) -> dict[str, Any]:
+        """Minimum distance in mm; on 3DEXPERIENCE also the closest point on
+        each element (mm)."""
+        if self.conn.is_3dx:
+            app = self.conn.app
+            measurable = self.measurable_3dx(ref1, "between")
+            try:
+                axis = call_fill_array(
+                    app, self.measurable_3dx(ref2, "between"), "GetAxisSystemFromMeasurable", 12
+                )
+            except Exception:
+                axis = list(_IDENTITY_AXIS)
+            values = [
+                float(v) for v in call_out_values(app, measurable, "DistanceMinTo", 7, ref2, axis)
+            ]
+            return {
+                "distance_mm": values[0],
+                "point1_mm": values[1:4],
+                "point2_mm": values[4:7],
+            }
         # Area/Volume are MKS (field-confirmed on V5); the minimum distance is
         # assumed MKS too and converted to mm. Not yet field-verified.
-        if self.conn.is_3dx:
-            measurable = self.measurable_3dx(ref1, "distance")
-            return float(measurable.GetMinimumDistance(ref2)) * M_TO_MM
-        return self.spa_workbench().GetMeasurable(ref1).GetMinimumDistance(ref2) * M_TO_MM
+        distance = self.spa_workbench().GetMeasurable(ref1).GetMinimumDistance(ref2) * M_TO_MM
+        return {"distance_mm": distance}
+
+    def min_distance_mm(self, ref1: Any, ref2: Any) -> float:
+        return self.min_distance(ref1, ref2)["distance_mm"]
 
     def inertia(self, part: Any, body: Any) -> dict[str, Any]:
         """Mass (kg, from the CATIA material) and inertia matrix (kg.m2)."""

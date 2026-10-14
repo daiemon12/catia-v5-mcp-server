@@ -19,11 +19,15 @@ editor's ActiveObject is a DrawingRoot (Sheets, ActiveSheet) instead of a
 DrawingDocument. Texts, tables and dimensions keep the V5 API. Generative
 views are created by the DrawingDefineGenView factory
 (Sheet.Views.DrawingDefineGenView) that replaced V5's
-DrawingViewGenerativeBehavior; its signatures are not publicly documented,
-so the factory call is bound from the installation's type information
-(argument kinds and order) and refused with the discovered signature when
-the binding is not exact. Where a release still exposes
-view.GenerativeBehavior, the V5 recipe is used as is.
+DrawingViewGenerativeBehavior. Its Define* functions (DSYAutomation.chm and
+type information of R428 SP6) take the view anchor (iXPos, iYpos) first and
+iViewStyle ("" = no Generative View Style), iComputeUpdate and iViewProp
+(CATDrawingGenService.DrawingGenViewProp) last, and return the view. The
+call is bound by parameter name from the installation's type information
+and refused with the discovered signature when a parameter is unknown, so a
+release with another signature fails before anything is created. Front
+views project product instances (iListofPrdInst). Where a release still
+exposes view.GenerativeBehavior, the V5 recipe is used as is.
 """
 
 from __future__ import annotations
@@ -32,11 +36,19 @@ import json
 import re
 from typing import Any
 
-from catia_mcp.automation import call_out_object, iter_items, name_exists, safe_get
+from catia_mcp.automation import call_out_object, iter_items, name_exists, resolves, safe_get
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.errors import AmbiguousTarget, ObjectNotFound, UnsupportedCapability, after_mutation
+from catia_mcp.errors import (
+    AmbiguousTarget,
+    CATIAToolError,
+    ObjectNotFound,
+    UnsupportedCapability,
+    WrongDocumentType,
+    after_mutation,
+)
 from catia_mcp.introspect import method_params
 from catia_mcp.plm import PLMSession
+from catia_mcp.references import search_final_topology
 from catia_mcp.tools.measurement import read_measurable_array
 
 # DefineFrontView takes the two sheet-plane axis vectors expressed in the
@@ -50,6 +62,20 @@ _PLANE_VECTORS = {
     "yz": (0, 1, 0, 0, 0, 1),
     "zx": (0, 0, 1, 1, 0, 0),
 }
+
+# Section profile types: V5 GenerativeBehavior names -> the legal values the
+# 3DEXPERIENCE factory documents (DSYAutomation.chm R428).
+_FACTORY_PROFILE_TYPES = {
+    "Offset": "CatOffsetSectionProfile",
+    "Aligned": "CatAlignedSectionProfile",
+}
+
+
+class _Lazy:
+    """A factory argument resolved only if the signature asks for it."""
+
+    def __init__(self, resolve: Any) -> None:
+        self.resolve = resolve
 
 
 class DraftingTools:
@@ -141,7 +167,11 @@ class DraftingTools:
                     "CATIA V5 (field-proven on R20): add constraints with "
                     "catia_sketch_constraint, then call this. Reports the "
                     "dimensions with values; generated ones follow the 3D "
-                    "model (status 3d_driven)."
+                    "model (status 3d_driven). Runs sheet-wide; each "
+                    "dimension lands in the view parallel to its constraint. "
+                    "3DEXPERIENCE R428 (live): Pad/Pocket lengths are "
+                    "generated too, and a radius constraint stays a radius "
+                    "(R) dimension (automation cannot switch it to diameter)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -342,7 +372,11 @@ class DraftingTools:
                     "plane or on a planar face, then update it. Create the "
                     "drawing first with catia_new_drawing; derive other "
                     "views with catia_drawing_projection_view / "
-                    "section_view / detail_view. Field-validated on V5R20."
+                    "section_view / detail_view. Field-validated on V5R20. "
+                    "3DEXPERIENCE: projects a product (3D Part or Physical "
+                    "Product, also a 3D Shape edited inside one), plane only; "
+                    "a standalone 3D Shape fails with UNSUPPORTED_CAPABILITY "
+                    "(live-checked on R428 SP6)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -351,8 +385,9 @@ class DraftingTools:
                             "type": "string",
                             "description": (
                                 "Open Part document to represent (e.g. "
-                                "'Part1.CATPart'). Defaults to the only "
-                                "open Part when unambiguous."
+                                "'Part1.CATPart'; on 3DEXPERIENCE the title "
+                                "of the open 3D content). Defaults to the "
+                                "only open Part when unambiguous."
                             ),
                         },
                         "body_name": {
@@ -468,8 +503,9 @@ class DraftingTools:
                 rows.append((editor, obj))
         return rows
 
-    def _find_source_3dx(self, part_name: str | None) -> Any:
-        """3D object (Part or root occurrence) shown in another editor."""
+    def _find_source_3dx(self, part_name: str | None) -> tuple[Any, Any]:
+        """3D object (Part or root occurrence) shown in another editor, with
+        that editor."""
         candidates = [
             (editor, obj) for editor, obj in self._editor_objects()
             if self.conn.classify(obj) in ("part", "product")
@@ -478,9 +514,13 @@ class DraftingTools:
         if part_name:
             matches = [c for c, t in zip(candidates, titles) if t == part_name] or [
                 c for c, t in zip(candidates, titles) if part_name in t
+            ] or [
+                # A 3D Part edited at shape level shows its 3D Shape in the
+                # editor (live R428); accept the enclosing product's title.
+                c for c in candidates if self._product_title_3dx(*c) == part_name
             ]
             if len(matches) == 1:
-                return matches[0][1]
+                return matches[0]
             if not matches:
                 raise ObjectNotFound(
                     f"No open 3D editor titled '{part_name}'. Open 3D content: "
@@ -488,11 +528,42 @@ class DraftingTools:
                 )
             raise AmbiguousTarget(f"'{part_name}' matches several editors: {', '.join(titles)}.")
         if len(candidates) == 1:
-            return candidates[0][1]
+            return candidates[0]
         raise AmbiguousTarget(
             "Pass 'part_name' (the title) to pick the 3D content to project. Open 3D "
             f"content: {', '.join(titles) or 'none'}."
         )
+
+    def _product_title_3dx(self, editor: Any, obj: Any) -> str | None:
+        """Title of the product enclosing a shape-level editor, if any."""
+        if self.conn.classify(obj) != "part":
+            return None
+        try:
+            return self.plm.title_of(self.conn.root_occurrence(editor))
+        except Exception:
+            return None
+
+    def _projected_root_3dx(self, editor: Any, obj: Any, title: str) -> Any:
+        """The product root occurrence a front view projects (iListofPrdInst).
+
+        Generative views project 'an assembly definition containing instances
+        of 3D shape representation' (DSYAutomation.chm R428). Live on R428
+        SP6, DefineFrontView projected a VPMRootOccurrence and silently
+        created nothing for a standalone 3D Shape (its Part or its
+        VPMRepReference). A 3D Shape edited inside a product resolves to that
+        product's root occurrence; a standalone one is refused untouched.
+        """
+        if resolves(obj, "ReferenceRootOccurrenceOf"):
+            return obj
+        try:
+            return self.conn.root_occurrence(editor)
+        except WrongDocumentType:
+            raise UnsupportedCapability(
+                f"'{title}' is a standalone 3D Shape. 3DEXPERIENCE generative views project "
+                "product instances, and CATIA creates no view for a 3D Shape outside a "
+                "product. Insert the shape into a Physical Product (or use a 3D Part), open "
+                "it, and pass its title as part_name."
+            ) from None
 
     def _find_part_document(self, part_name: str | None) -> Any:
         docs = self.conn.documents
@@ -661,9 +732,9 @@ class DraftingTools:
                 if str(v.Name) == view_name:
                     return v
             names = ", ".join(str(views.Item(i).Name) for i in range(1, views.Count + 1))
-            raise RuntimeError(f"No view named '{view_name}'. Views: {names}.")
+            raise ObjectNotFound(f"No view named '{view_name}'. Views: {names}.")
         if views.Count < 3:
-            raise RuntimeError(
+            raise ObjectNotFound(
                 "The active sheet has no user view yet (only Main/Background). "
                 "Add one with catia_drawing_add_view."
             )
@@ -745,13 +816,9 @@ class DraftingTools:
         body = part.Bodies.Item(body_name) if body_name else part.MainBody
         if body.Shapes.Count == 0:
             raise RuntimeError("The body has no solid shape to take a face from.")
-        last_shape = body.Shapes.Item(body.Shapes.Count)
         sel = part_doc.Selection
         try:
-            sel.Clear()
-            sel.Add(last_shape)
-            sel.Search("Topology.Face,sel")
-            if idx < 1 or idx > sel.Count:
+            if idx < 1 or idx > search_final_topology(sel, body, "Face", is_3dx=self.conn.is_3dx):
                 raise RuntimeError(
                     f"{face_name} is out of range: the final shape exposes "
                     f"{sel.Count} face(s)."
@@ -995,12 +1062,7 @@ class DraftingTools:
         if self._uses_factory(parent):
             view = self._factory_view(
                 sheet, "DefineProjectionView",
-                {
-                    "object": [parent],
-                    "int": [_PROJECTION_TYPES[direction]],
-                    "double": [args.get("x", px + dx), args.get("y", py + dy)],
-                    "string": [args.get("name") or f"{direction} view"],
-                },
+                {"iParentView": parent, "iType": _PROJECTION_TYPES[direction]},
                 args.get("name") or f"{direction} view",
                 args.get("x", px + dx), args.get("y", py + dy), pscale,
             )
@@ -1043,11 +1105,11 @@ class DraftingTools:
             view = self._factory_view(
                 sheet, "DefineSectionView",
                 {
-                    "array": [profile],
-                    "variant": [profile],
-                    "string": [section_type, profile_type, args.get("name") or "section view"],
-                    "int": [side],
-                    "object": [parent],
+                    "iProfile": profile,
+                    "iSectionType": section_type,
+                    "iProfileType": _FACTORY_PROFILE_TYPES[profile_type],
+                    "iSideToDraw": side,
+                    "iParentView": parent,
                 },
                 args.get("name") or "section view",
                 args.get("x", px + 150.0), args.get("y", py), pscale,
@@ -1083,11 +1145,7 @@ class DraftingTools:
         if self._uses_factory(parent):
             view = self._factory_view(
                 sheet, "DefineCircularDetailView",
-                {
-                    "double": [cx, cy, radius],
-                    "object": [parent],
-                    "string": [args.get("name") or "detail view"],
-                },
+                {"iXCenter": cx, "iYCenter": cy, "iRadius": radius, "iParentView": parent},
                 args.get("name") or "detail view",
                 args.get("x", px + 150.0), args.get("y", py + 100.0), factor * pscale,
             )
@@ -1116,10 +1174,11 @@ class DraftingTools:
         generative views through Views.DrawingDefineGenView."""
         return self.conn.is_3dx and not name_exists(view, "GenerativeBehavior")
 
-    def _bind_factory_call(self, factory: Any, method: str, pools: dict[str, list[Any]]) -> Any:
-        """Call factory.method with arguments bound by kind, in signature
-        order, from the installation's type information. Refuses (with the
-        discovered signature) unless every required parameter binds."""
+    def _bind_factory_call(self, factory: Any, method: str, values: dict[str, Any]) -> Any:
+        """Call factory.method with arguments bound by parameter name (case
+        insensitive), in signature order, from the installation's type
+        information. Refuses with the discovered signature, before calling,
+        unless every required parameter has a value."""
         params = method_params(factory, method)
         if params is None:
             raise UnsupportedCapability(
@@ -1134,11 +1193,11 @@ class DraftingTools:
         outputs = [p for p in params if p["out"]]
         if len(outputs) > 1 or (outputs and params[-1] is not outputs[0]):
             raise UnsupportedCapability(f"Unsupported factory signature {signature}.")
-        remaining = {kind: list(values) for kind, values in pools.items()}
+        known = {name.lower(): value for name, value in values.items()}
         args: list[Any] = []
         for param in inputs:
-            pool = remaining.get(param["type"])
-            if not pool:
+            key = param["name"].lower()
+            if key not in known:
                 if param["optional"]:
                     break
                 raise UnsupportedCapability(
@@ -1147,16 +1206,42 @@ class DraftingTools:
                     "the view in the UI, or script it with catia_run_script using this "
                     "signature."
                 )
-            args.append(pool.pop(0))
+            value = known[key]
+            args.append(value.resolve() if isinstance(value, _Lazy) else value)
         if outputs:
             return call_out_object(self.conn.app, factory, method, *args)
         return getattr(factory, method)(*args)
+
+    def _view_properties(self) -> Any:
+        """iViewProp: the generative view properties of the drawing settings.
+        DSYAutomation.chm names the service CATDrawingGenService; its examples
+        use CATDrawingService."""
+        errors = []
+        for service in ("CATDrawingGenService", "CATDrawingService"):
+            try:
+                return self.conn.session_service(service).DrawingGenViewProp
+            except Exception as e:
+                errors.append(f"{service}: {e}")
+        raise UnsupportedCapability(
+            "No generative view properties (DrawingGenViewProp) on this installation: "
+            + "; ".join(errors)
+        )
+
+    def _factory_common(self, x: float, y: float) -> dict[str, Any]:
+        """Anchor and trailing arguments shared by every Define* call."""
+        return {
+            "iXPos": float(x),
+            "iYpos": float(y),
+            "iViewStyle": "",
+            "iComputeUpdate": True,
+            "iViewProp": _Lazy(self._view_properties),
+        }
 
     def _factory_view(
         self,
         sheet: Any,
         method: str,
-        pools: dict[str, list[Any]],
+        values: dict[str, Any],
         name: str,
         x: float,
         y: float,
@@ -1165,10 +1250,16 @@ class DraftingTools:
         views = sheet.Views
         before = int(views.Count)
         factory = views.DrawingDefineGenView
-        view = self._bind_factory_call(factory, method, pools)
+        view = self._bind_factory_call(factory, method, {**self._factory_common(x, y), **values})
         if view is None or not name_exists(view, "Name"):
             if int(views.Count) <= before:
-                raise RuntimeError(f"DrawingDefineGenView.{method} created no view.")
+                # Live R428: CATIA returns nothing, without an error, when it
+                # cannot project the inputs. The sheet is verifiably unchanged.
+                raise CATIAToolError(
+                    f"DrawingDefineGenView.{method} returned no view and the sheet gained "
+                    "none: CATIA silently rejected the inputs.",
+                    code="FEATURE_NO_EFFECT",
+                )
             view = views.Item(views.Count)
         try:
             view.Name = name
@@ -1196,8 +1287,8 @@ class DraftingTools:
         plane = (args.get("plane") or "xy").lower()
         if plane not in _PLANE_VECTORS:
             raise ValueError(f"Unknown plane '{plane}'. Use 'xy', 'yz', or 'zx'.")
-        vectors = list(_PLANE_VECTORS[plane])
-        source = self._find_source_3dx(args.get("part_name"))
+        vectors = [float(v) for v in _PLANE_VECTORS[plane]]
+        editor, source = self._find_source_3dx(args.get("part_name"))
         source_title = self.plm.title_of(source)
         drawing = self._find_active_drawing()
         sheet = self._active_sheet(drawing)
@@ -1226,9 +1317,11 @@ class DraftingTools:
                 raise
         else:
             route = "DrawingDefineGenView"
+            root = self._projected_root_3dx(editor, source, source_title)
+            source_title = self.plm.title_of(root)  # what is projected: the product
             view = self._factory_view(
                 sheet, "DefineFrontView",
-                {"object": [source], "double": vectors, "string": [name]},
+                {"iListofPrdInst": [root], "iPlane": vectors},
                 name, x, y,
             )
         if args.get("angle"):

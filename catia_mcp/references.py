@@ -6,7 +6,9 @@ geometrical set (nested included), then sketches in solid bodies.
 Topology: indexed Face.N / Edge.N / Vertex.N over the final shape of a body,
 matching catia_list_faces / catia_list_edges. References come from the
 selection's Reference property because CreateReferenceFromObject rejects
-HSO-resolved topology cells (field-verified E_INVALIDARG on V5R20).
+HSO-resolved topology cells (field-verified E_INVALIDARG on V5R20). Every
+enumeration goes through search_final_topology so indices agree across tools;
+the search root differs per platform (see there).
 """
 
 from __future__ import annotations
@@ -83,19 +85,47 @@ def topology_index(name: str, kind: str) -> int:
     return match[1]
 
 
+def search_final_topology(
+    sel: Any, body: Any, kind: str, last_shape: Any | None = None, *, is_3dx: bool
+) -> int:
+    """Fill `sel` with the Face / Edge / Vertex cells of a body's final shape
+    and return how many there are. The caller clears `sel`.
+
+    CATIA V5: the search starts from the body's last shape (field-validated
+    on V5R20) and runs on the body only when that finds nothing.
+
+    3DEXPERIENCE: the search runs on the body, never on the last shape.
+    Live on R428 SP6, a last-shape search returns only the cells that
+    feature created (2 faces when the last feature is a Hole) or none at
+    all (a boolean, Add.1), while the body search returns the final solid
+    (14 faces for a block with 4 holes, 15 on the smoke block after a
+    boolean). Falling back to the last shape would index a partial cell
+    set, so there is no fallback.
+    """
+    if is_3dx:
+        roots: tuple[Any, ...] = (body,)
+    else:
+        if last_shape is None:
+            last_shape = body.Shapes.Item(body.Shapes.Count)
+        roots = (last_shape, body)
+    for root in roots:
+        sel.Clear()
+        sel.Add(root)
+        sel.Search(f"Topology.{kind},sel")
+        if sel.Count:
+            break
+    return sel.Count
+
+
 def topology_reference(conn: CATIAConnection, kind: str, index: int, body: Any | None = None) -> Any:
     """Resolve Face.N / Edge.N / Vertex.N on a body's final shape (default:
     the active body) to a Reference."""
     body = body if body is not None else conn.get_active_part_body()
     if body.Shapes.Count == 0:
         raise ObjectNotFound("The active body has no solid shape yet.")
-    last_shape = body.Shapes.Item(body.Shapes.Count)
     sel = conn.hso
     try:
-        sel.Clear()
-        sel.Add(last_shape)
-        sel.Search(f"Topology.{kind},sel")
-        count = sel.Count
+        count = search_final_topology(sel, body, kind, is_3dx=conn.is_3dx)
         if index < 1 or index > count:
             raise ObjectNotFound(
                 f"{kind}.{index} is out of range: the final shape exposes "

@@ -89,6 +89,19 @@ class Selection:
     def Count(self) -> int:  # noqa: N802
         return len(self.items)
 
+    def Item(self, index: int) -> Any:  # noqa: N802
+        return self.items[index - 1]
+
+    def Search(self, query: str) -> None:  # noqa: N802
+        """'Topology.<Kind>,sel' replaces the selection with the cells listed
+        in each selected object's `topology` mapping."""
+        match = re.match(r"^Topology\.(\w+),sel$", query)
+        if not match:
+            raise AssertionError(f"unexpected search {query}")
+        roots, self.items = self.items, []
+        for root in roots:
+            self.items.extend(getattr(root, "topology", {}).get(match.group(1), []))
+
     def Copy(self) -> None:  # noqa: N802
         Selection.shared_clipboard = list(self.items)
 
@@ -126,6 +139,37 @@ class Editor:
         if name not in self.services:
             raise RuntimeError(f"service {name} unavailable")
         return self.services[name]
+
+
+class VolumeService:
+    """MeasurableService measuring a solid whose volume (mm3) the test sets;
+    GetVolume answers in m3 like CATIA."""
+
+    def __init__(self, volume_mm3: float) -> None:
+        self.volume_mm3 = volume_mm3
+
+    def GetMeasurable(self, target: Any, code: int) -> Any:  # noqa: N802
+        return SimpleNamespace(GetVolume=lambda: self.volume_mm3 / 1e9)
+
+
+class Hole:
+    """Hole as R428 creates it from a sketch: the depth passed to
+    AddNewHoleFromSketch is ignored, the bottom limit keeps 10 mm."""
+
+    def __init__(self, name: str = "Hole.1") -> None:
+        self.Name = name
+        self.Diameter = SimpleNamespace(Value=20.0)
+        self.BottomLimit = SimpleNamespace(Dimension=SimpleNamespace(Value=10.0))
+        self.BottomType = 0
+        self.ThreadingMode = 0
+        self.reverse_calls = 0
+
+    def Reverse(self) -> None:  # noqa: N802
+        self.reverse_calls += 1
+
+    @property
+    def reversed(self) -> bool:
+        return self.reverse_calls % 2 == 1
 
 
 def make_part(name: str = "Part1", rep: PLMObject | None = None) -> SimpleNamespace:

@@ -93,12 +93,14 @@ matching licence (the server falls back to a 3D Shape and says so).
 
 **Validation status.** The 3DEXPERIENCE paths were built from the published
 3DEXPERIENCE automation object model and field-reported macros, and are
-covered by offline contract tests; they have not yet been run against a live
-3DEXPERIENCE session. Run `python scripts/live_smoke_test.py` on your machine
-(it builds and measures a throw-away part, saves nothing) and report the
-JSON it writes, together with `catia_diagnose` output. When a tool reports
-`UNSUPPORTED_CAPABILITY`, `catia_inspect_api` shows what your release
-exposes.
+covered by offline contract tests. The live smoke test passes on
+3DEXPERIENCE R428 SP6 (51 passed, 2 expected skips: STEP export and drawing
+a standalone 3D Shape); other releases are not yet validated. Run
+`python scripts/live_smoke_test.py` on your machine (it builds and measures
+a throw-away part, saves nothing; add `--plm-type 3DShape` without the 3D
+Part licence) and report the JSON it writes, together with `catia_diagnose`
+output. When a tool reports `UNSUPPORTED_CAPABILITY`, `catia_inspect_api`
+shows what your release exposes.
 
 ## Quick Install (Recommended)
 

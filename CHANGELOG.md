@@ -21,7 +21,8 @@ All notable changes to this project are documented here.
   UNSUPPORTED_CAPABILITY: file export of database content, assembly
   constraints (engineering connections), face-driven drawing views. Built
   from the public object model and field macros, covered by offline
-  contract tests; not yet live-validated (docs/3dexperience.md).
+  contract tests; live smoke test passing on 3DEXPERIENCE R428 SP6, other
+  releases unvalidated (docs/3dexperience.md).
 - 3DEXPERIENCE PLM tools: `catia_search_database`,
   `catia_open_from_database` (refuses ambiguous matches),
   `catia_get_plm_attributes`, `catia_set_plm_attributes`,
@@ -46,12 +47,98 @@ All notable changes to this project are documented here.
   live V5 or 3DEXPERIENCE session and writes a JSON report.
 
 ### Fixed
+- First live 3DEXPERIENCE run (R428 SP6) fixes; the smoke test went from
+  46 passed / 4 failed to 51 passed / 2 expected skips / 0 failed:
+  - `catia_measure_distance` (3DEXPERIENCE): measured through a V5-style
+    `GetMinimumDistance` that no measurable exposes, so it always failed. It
+    now uses `MeasurableBetween.DistanceMinTo` with the other element's axis
+    system, returns mm (live: 50 mm and 10 mm on known geometry) and reports
+    the closest points.
+  - Topology after a boolean: `Face.N` / `Edge.N` / `Vertex.N` were searched
+    from the body's last shape only, which exposes no cells on 3DEXPERIENCE
+    when it is a boolean (`Add.1`), so `catia_list_faces`, measurements and
+    the bounding box found nothing. One shared helper now falls back to the
+    body when the last shape yields nothing; a non-empty enumeration (all
+    field-validated V5 cases) is unchanged. (On 3DEXPERIENCE the helper now
+    always searches the body; see the R428 findings below.)
+  - Drawing views (3DEXPERIENCE): `DrawingDefineGenView` arguments were
+    bound by kind from a guessed signature and never matched the real one
+    (anchor first; style, update flag and view properties last), and the
+    kind binding could put a detail circle centre into the view anchor.
+    Arguments are now bound by parameter name from the type library, view
+    properties come from `CATDrawingGenService`, and front views project the
+    product's root occurrence. Live: front and projection views created; a
+    standalone 3D Shape, which CATIA silently refuses to project, now fails
+    with `UNSUPPORTED_CAPABILITY` before anything is created. Section
+    profile types use the documented `CatOffsetSectionProfile` /
+    `CatAlignedSectionProfile` there.
+  - `catia_export`: a refused `ExportData` on 3DEXPERIENCE was a generic
+    `COM_ERROR`; it is now `UNSUPPORTED_CAPABILITY` with the manual route. On
+    both platforms an export succeeds only when the output file is written
+    (a missing or stale file used to be reported as exported).
+  - Drawing view lookups (`no user view yet`, unknown view name) are
+    `OBJECT_NOT_FOUND` with `modified=false` instead of `COM_ERROR` with
+    unknown modification; a factory call that creates no view is
+    `FEATURE_NO_EFFECT` with `modified=false`.
+  - `catia_get_inertia` centre of gravity (3DEXPERIENCE): called V5's
+    `GetCOG`, which R428 measurables do not have; it now uses `GetCOfG`
+    (live: (0, 0.0016, 20.17) mm on the smoke solid).
+  - `catia_drawing_add_view` (3DEXPERIENCE): a 3D Part edited at shape level
+    shows its 3D Shape in the editor, so the part's own title was not found;
+    `part_name` now also matches the enclosing product's title, and the
+    result names the product actually projected.
+  - `scripts/live_smoke_test.py`: the report's platform was read after
+    disconnecting ("platform not detected yet"); the projection view no
+    longer runs (and fails) when the front view was not created; new
+    `--plm-type` option, known-distance and topology-after-boolean checks.
+- Further live findings on 3DEXPERIENCE R428 SP6 (B428_Cloud):
+  - `catia_hole`: `AddNewHoleFromSketch` ignores its depth there (live: the
+    bottom limit read 10 mm after asking for 20). The depth is now set on
+    `BottomLimit.Dimension` and read back on both platforms; a depth that
+    does not take fails with `WRONG_GEOMETRY_EFFECT`. A hole that drilled
+    into air (sketched on the XY plane at the pad's bottom face, volume
+    unchanged) was reported as "Hole created". The tool now measures the body
+    volume before and after and reports the removed volume. A hole that
+    removes nothing is reversed once and measured again; if it still removes
+    nothing, the call fails with `FEATURE_NO_EFFECT` and `modified` unknown
+    (the hole stays in the tree). A non-positive diameter or depth is now
+    `INVALID_ARGUMENT` before anything is created.
+  - `catia_user_pattern` (3DEXPERIENCE): a user pattern of a
+    sketch-positioned Hole was created, rejected by CATIA on update, removed
+    again and reported as a generic `COM_ERROR`. `DSYAutomation.chm` R428
+    types `UserPattern.AnchorPoint` only as `CATIABase`, with no
+    `SetAnchorPoint` and no recipe. A Hole seed is now refused with
+    `UNSUPPORTED_CAPABILITY` before anything is created, and the message
+    points to `catia_pocket`. Other seeds, and V5, are unchanged.
+  - Topology (3DEXPERIENCE): a search from the last shape returns only the
+    cells that feature created (2 faces when the last feature is a Hole).
+    `catia_list_faces` / `catia_list_edges`, `Face.N` / `Edge.N` /
+    `Vertex.N` resolution, measurements and the bounding box therefore saw
+    a fragment of the solid. On 3DEXPERIENCE the search now always runs on
+    the body (live: 14 faces for a block with 4 holes). V5 keeps the
+    field-validated last-shape search with its body fallback.
+  - Documented in docs/3dexperience.md, with no tool affected: R428 silently
+    ignores `DrawingRoot.Standard = "ASME"`, commits DrawingGDT reference
+    cells only when they are read back, and composes section view labels as
+    prefix + ident + "-" + ident + suffix.
 - `catia_move_component` and `catia_list_components` (V5): Position
   components were read with a Python list that late-bound COM never fills,
   so positions listed as 0 and a move wrote a zero rotation matrix. They are
   now read through SystemService.Evaluate, and rotations are applied to the
   component's axes about its own origin (the previous composition was
   transposed).
+- `catia_pocket`, `catia_slot` and `catia_rib`: a feature that changed no
+  material returned text starting with `FEATURE_NO_EFFECT:` as an ordinary
+  result, so MCP `isError` was false and the call read as a success. They
+  now fail like `catia_hole`: a structured `FEATURE_NO_EFFECT` envelope with
+  `isError=true` and `effects.modified` unknown. This covers a pocket that
+  removes nothing in an explicit `direction` or after the automatic flip, a
+  slot that removes nothing, and a rib that adds nothing. The feature stays
+  in the tree, and the message keeps its name, the measured volumes and the
+  guidance (now also pointing to `catia_delete_feature`). Clients that
+  matched the text prefix must read the envelope's `code` instead. Success
+  results, the pocket auto-flip and the V5 call sequence are unchanged.
+  `scripts/live_smoke_test.py` now reads the code from the envelope.
 
 ### Changed
 - pywin32 is required only on Windows (dependency marker), so the offline

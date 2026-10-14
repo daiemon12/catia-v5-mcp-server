@@ -12,6 +12,7 @@ the shared 3DSpace database). The part is left open for inspection.
 Usage (Windows, CATIA started and, for 3DEXPERIENCE, logged in):
     python scripts/live_smoke_test.py
     python scripts/live_smoke_test.py --drawing --report smoke_report.json
+    python scripts/live_smoke_test.py --drawing --plm-type 3DShape   (no 3D Part licence)
 """
 
 from __future__ import annotations
@@ -58,8 +59,8 @@ class Runner:
                 ok, note = False, f"postcondition failed: {e}"
             except Exception as e:
                 ok, note = False, f"postcondition error: {e}"
-        if ok and text.startswith("FEATURE_NO_EFFECT"):
-            ok, note = False, "feature had no effect"
+        if code == "FEATURE_NO_EFFECT":
+            note = "feature had no effect"
         status = "PASS" if ok else "FAIL"
         if not ok and allow_unsupported and code == "UNSUPPORTED_CAPABILITY":
             status, note = "SKIP", "unsupported on this platform (expected)"
@@ -111,11 +112,41 @@ def check_bbox(text: str) -> str:
     return f"bbox {got} OK"
 
 
+def check_distance(expected: float):
+    def check(text: str) -> str:
+        match = re.search(r": ([-\d.]+) mm", text)
+        assert match, "no distance in the result"
+        got = float(match.group(1))
+        assert abs(got - expected) < 0.01, f"distance {got} mm, expected {expected}"
+        return f"distance {got} mm OK"
+
+    return check
+
+
+def check_faces(minimum: int):
+    def check(text: str) -> str:
+        assert text.lstrip().startswith("["), text[:200]
+        count = len(json.loads(text))
+        assert count >= minimum, f"{count} faces, expected at least {minimum}"
+        return f"{count} faces"
+
+    return check
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--platform", default="auto", help="auto, v5 or 3dx")
     parser.add_argument("--save", action="store_true", help="save the test part at the end")
     parser.add_argument("--drawing", action="store_true", help="also test drafting tools")
+    parser.add_argument(
+        "--plm-type",
+        choices=["auto", "3DPart", "3DShape"],
+        default="auto",
+        help=(
+            "3DEXPERIENCE only: type of the test part. 3DShape skips the 3D Part attempt, "
+            "whose licence refusal shows a modal dialog that blocks the run"
+        ),
+    )
     parser.add_argument("--report", default="smoke_report.json", help="JSON report path")
     args = parser.parse_args()
 
@@ -127,7 +158,10 @@ def main() -> int:
         if not ok:
             return 2
         run.call("catia_diagnose")
-        ok, _ = run.call("catia_new_part", {"name": f"MCP_Smoke_{stamp}"})
+        part_args = {"name": f"MCP_Smoke_{stamp}"}
+        if args.plm_type != "auto":
+            part_args["plm_type"] = args.plm_type
+        ok, _ = run.call("catia_new_part", part_args)
         if not ok:
             print("Cannot create a part; stopping. See catia_diagnose output above.")
             return 3
@@ -165,6 +199,10 @@ def main() -> int:
         run.call("catia_pad", {"height": 10})
         run.call("catia_set_active_body")
         run.call("catia_boolean", {"operation": "add", "body_name": "Boss"})
+        # Topology must stay reachable when the last feature is a boolean
+        # (block 6 + 4 blind pockets x 2 + fillet 1 = 15 faces).
+        run.call("catia_list_faces", check=check_faces(15))
+        run.call("catia_measure_element", {"element": "Face.1"})
 
         # GSD.
         run.call("catia_gsd_create_geoset", {"name": "Smoke_GSD"})
@@ -174,6 +212,10 @@ def main() -> int:
         run.call("catia_gsd_point_on_curve", {"curve": "L1", "ratio": 0.5, "name": "Mid"})
         run.call("catia_gsd_plane_offset", {"base_plane": "xy", "offset": 70, "name": "Top70"})
         run.call("catia_gsd_list_elements")
+        run.call("catia_measure_distance", {"element1": "P1", "element2": "P2"},
+                 check=check_distance(50.0))
+        run.call("catia_measure_distance", {"element1": "P1", "element2": "Top70"},
+                 check=check_distance(10.0))
 
         # Knowledgeware.
         run.call("catia_create_parameter", {"name": "SmokeThickness", "type": "length", "value": 5})
@@ -202,18 +244,26 @@ def main() -> int:
             view_args = {"plane": "xy"}
             if part_title:
                 view_args["part_name"] = part_title
-            run.call("catia_drawing_add_view", view_args)
-            run.call("catia_drawing_projection_view", {"direction": "right"})
+            # On 3DEXPERIENCE generative views project product instances; a
+            # standalone 3D Shape (the fallback without a 3D Part licence) has
+            # none, which the tool reports as UNSUPPORTED_CAPABILITY.
+            view_ok, _ = run.call(
+                "catia_drawing_add_view", view_args, allow_unsupported=server.connection.is_3dx
+            )
+            if view_ok:
+                run.call("catia_drawing_projection_view", {"direction": "right"})
             run.call("catia_drawing_add_text", {"text": "MCP smoke test", "x": 20, "y": 20})
             run.call("catia_drawing_list_views")
 
         if args.save:
             run.call("catia_save_document")
     finally:
+        # Read before close(): disconnecting resets the detected platform.
+        platform = server.connection.platform_label
         asyncio.run(server.close())
         failed = [r for r in run.rows if r["status"] == "FAIL"]
         report = {
-            "platform": server.connection.platform_label,
+            "platform": platform,
             "passed": sum(r["status"] == "PASS" for r in run.rows),
             "skipped": sum(r["status"] == "SKIP" for r in run.rows),
             "failed": len(failed),

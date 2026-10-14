@@ -20,6 +20,7 @@ from catia_mcp.measure import (
     UNIT_NOTE_3DX,
     Measurer,
 )
+from catia_mcp.references import search_final_topology
 
 # CATIA V5's SPAWorkbench Measurable API returns every value in MKS units
 # (meters, m2, m3, kg.m2) regardless of the document's display units.
@@ -209,11 +210,7 @@ class MeasurementTools:
                         f"Cannot resolve '{name}': the active body has no "
                         "solid shape to enumerate topology from."
                     )
-                last_shape = body.Shapes.Item(body.Shapes.Count)
-                sel.Clear()
-                sel.Add(last_shape)
-                sel.Search(f"Topology.{kind},sel")
-                count = sel.Count
+                count = search_final_topology(sel, body, kind, is_3dx=self.conn.is_3dx)
                 if idx < 1 or idx > count:
                     raise RuntimeError(
                         f"'{name}' is out of range: the final shape exposes "
@@ -246,11 +243,16 @@ class MeasurementTools:
         ref1 = self._resolve_reference(part, elem1_name)
         ref2 = self._resolve_reference(part, elem2_name)
 
-        distance = self.measure.min_distance_mm(ref1, ref2)
+        measured = self.measure.min_distance(ref1, ref2)
+        points = ""
+        if "point1_mm" in measured:
+            p1 = ", ".join(f"{v:g}" for v in measured["point1_mm"])
+            p2 = ", ".join(f"{v:g}" for v in measured["point2_mm"])
+            points = f"; closest points ({p1}) and ({p2}) mm"
         note = f" ({UNIT_NOTE_3DX})" if self.conn.is_3dx else ""
         return (
             f"Minimum distance between '{elem1_name}' and '{elem2_name}': "
-            f"{distance:.4f} mm{note}"
+            f"{measured['distance_mm']:.4f} mm{points}{note}"
         )
 
     def _get_inertia(self, density: float | None = None) -> str:
@@ -327,15 +329,10 @@ class MeasurementTools:
         body = self.conn.get_active_part_body()
         if body.Shapes.Count == 0:
             raise RuntimeError("The active body has no solid shape yet.")
-        last_shape = body.Shapes.Item(body.Shapes.Count)
-
         sel = self.conn.hso
         refs = []
         try:
-            sel.Clear()
-            sel.Add(last_shape)
-            sel.Search("Topology.Vertex,sel")
-            count = sel.Count
+            count = search_final_topology(sel, body, "Vertex", is_3dx=self.conn.is_3dx)
             if count == 0:
                 raise RuntimeError(
                     "UNSUPPORTED_CAPABILITY: the final shape exposes no "

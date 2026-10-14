@@ -5,9 +5,12 @@ Also includes screenshot capture and view control, which use the
 Window/Viewer API shared by both platforms.
 
 3DEXPERIENCE content lives in the database, not in documents, and its
-automation API documents no file export for it; catia_export uses
-Document.ExportData where the installation still exposes a document and
-otherwise reports UNSUPPORTED_CAPABILITY with the manual route.
+automation API documents no file export for it (DSYAutomation.chm R428 has
+no ExportData). catia_export tries Document.ExportData where the
+installation still exposes a compatibility document; when there is none, or
+CATIA refuses the call (live-observed on R428 SP6 for a 3D Shape), it
+reports UNSUPPORTED_CAPABILITY with the manual route. On both platforms an
+export only succeeds once the output file is verified on disk.
 """
 
 from __future__ import annotations
@@ -17,7 +20,12 @@ from typing import Any
 
 from catia_mcp.automation import name_exists, safe_get
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.errors import UnsupportedCapability
+from catia_mcp.errors import CATIAToolError, UnsupportedCapability
+
+_MANUAL_EXPORT_3DX = (
+    "Use CATIA's Export command (Action bar / 3DEXPERIENCE menu > Export, STEP needs "
+    "the exchange licence, e.g. ST1). catia_screenshot works on 3DEXPERIENCE."
+)
 
 # CATIA export format identifiers
 FORMAT_MAP = {
@@ -47,10 +55,12 @@ class ExportTools:
                 "description": (
                     "Export the active document to a file. "
                     "Supported formats: STEP (.stp), IGES (.igs), STL (.stl), "
-                    "3DXML (.3dxml), VRML (.wrl), PDF (2D drawings). On 3DEXPERIENCE "
-                    "this works only where the installation exposes a document with "
-                    "ExportData; otherwise use CATIA's Export command (needs the "
-                    "exchange licence, e.g. ST1 for STEP)."
+                    "3DXML (.3dxml), VRML (.wrl), PDF (2D drawings). Succeeds only "
+                    "when the file is verified on disk. On 3DEXPERIENCE this works "
+                    "only where the installation exposes a document whose ExportData "
+                    "CATIA accepts; otherwise it fails with UNSUPPORTED_CAPABILITY "
+                    "and CATIA's Export command is the route (needs the exchange "
+                    "licence, e.g. ST1 for STEP)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -159,11 +169,7 @@ class ExportTools:
             return doc
         raise UnsupportedCapability(
             "3DEXPERIENCE automation exposes no file export for database content on "
-            "this installation (no document with ExportData). Use CATIA's Export "
-            "command (Action bar / 3DEXPERIENCE menu > Export, STEP needs the ST1 "
-            "licence), or look for an export service in your release with "
-            "catia_inspect_api path='app' filter='Export'. catia_screenshot works on "
-            "3DEXPERIENCE."
+            "this installation (no document with ExportData). " + _MANUAL_EXPORT_3DX
         )
 
     def _export(self, file_path: str, fmt: str | None = None) -> str:
@@ -187,18 +193,34 @@ class ExportTools:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
 
-        # CATIA V5 export via SaveAs with format specification
-        doc.ExportData(file_path, FORMAT_MAP[fmt_key])
+        # An overwritten file must be rewritten, not merely present.
+        before = os.path.getmtime(file_path) if os.path.exists(file_path) else None
 
-        size_info = ""
-        if os.path.exists(file_path):
-            size_bytes = os.path.getsize(file_path)
-            if size_bytes > 1024 * 1024:
-                size_info = f" ({size_bytes / (1024*1024):.1f} MB)"
-            elif size_bytes > 1024:
-                size_info = f" ({size_bytes / 1024:.1f} KB)"
-            else:
-                size_info = f" ({size_bytes} bytes)"
+        try:
+            doc.ExportData(file_path, FORMAT_MAP[fmt_key])
+        except Exception as e:
+            if not self.conn.is_3dx:
+                raise
+            raise UnsupportedCapability(
+                f"CATIA refused ExportData ({e}). The 3DEXPERIENCE automation reference "
+                "documents no file export for database content. " + _MANUAL_EXPORT_3DX
+            ) from e
+
+        if not os.path.exists(file_path) or (
+            before is not None and os.path.getmtime(file_path) <= before
+        ):
+            raise CATIAToolError(
+                f"ExportData returned without error but wrote no file at {file_path}. "
+                "Check the format licence and the path, then retry."
+            )
+
+        size_bytes = os.path.getsize(file_path)
+        if size_bytes > 1024 * 1024:
+            size_info = f" ({size_bytes / (1024*1024):.1f} MB)"
+        elif size_bytes > 1024:
+            size_info = f" ({size_bytes / 1024:.1f} KB)"
+        else:
+            size_info = f" ({size_bytes} bytes)"
 
         return f"Exported to {file_path}{size_info} (format: {fmt_key.upper()})"
 

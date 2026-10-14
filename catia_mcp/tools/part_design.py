@@ -6,22 +6,26 @@ Draft, plus bodies, boolean operations and feature management.
 
 The ShapeFactory API is the same on both platforms once the Part is
 resolved (connection.get_active_part). Platform differences are confined to
-measurement (measure.Measurer) and to the circular-pattern axis recipe.
+measurement (measure.Measurer), topology search (references), the
+circular-pattern axis recipe and the user-pattern refusal of Hole seeds.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
-from catia_mcp.automation import iter_items
+from catia_mcp.automation import iter_items, name_exists
 from catia_mcp.connection import CATIAConnection
-from catia_mcp.errors import InvalidArgument, ObjectNotFound
+from catia_mcp.errors import CATIAToolError, InvalidArgument, ObjectNotFound, UnsupportedCapability
+from catia_mcp.introspect import type_name
 from catia_mcp.measure import Measurer
 from catia_mcp.references import (
     body_by_name,
     find_element,
     iter_geosets,
+    search_final_topology,
     topology_index,
     topology_reference,
 )
@@ -72,7 +76,11 @@ class PartDesignTools:
                 "name": "catia_pocket",
                 "description": (
                     "Create a Pocket (cut extrusion) from the last sketch. "
-                    "Removes material by extruding a 2D profile inward."
+                    "Removes material by extruding a 2D profile inward. The removed "
+                    "volume is measured and reported. Without 'direction', a pocket "
+                    "that removes nothing is flipped once; a pocket that still removes "
+                    "nothing, or removes nothing in an explicit 'direction', fails "
+                    "with FEATURE_NO_EFFECT (the pocket stays in the tree)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -190,7 +198,11 @@ class PartDesignTools:
                 "name": "catia_hole",
                 "description": (
                     "Create a Hole feature at a point in the active sketch. "
-                    "Supports simple, tapered, counterbored, and countersunk holes."
+                    "Supports simple, tapered, counterbored, and countersunk holes. "
+                    "The depth is set on the hole's bottom limit and read back; the "
+                    "removed volume is measured and reported. A hole that removes "
+                    "nothing is reversed once; if it still removes nothing the call "
+                    "fails with FEATURE_NO_EFFECT (the hole stays in the tree)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -314,7 +326,9 @@ class PartDesignTools:
                     "arbitrary bolt layouts). Draw the points with "
                     "catia_sketch_point in a dedicated sketch and close it; "
                     "pass its name from catia_close_sketch. Points must not "
-                    "coincide with the seed feature's position."
+                    "coincide with the seed feature's position. On 3DEXPERIENCE "
+                    "a Hole seed is refused with UNSUPPORTED_CAPABILITY (CATIA "
+                    "rejects it); cut circles with catia_pocket instead."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -489,7 +503,8 @@ class PartDesignTools:
                 "description": (
                     "Create a Rib: sweep a closed profile along a center curve, adding "
                     "material. Profile and center curve are sketch or curve element names "
-                    "(close the sketches first)."
+                    "(close the sketches first). A rib that adds no material fails with "
+                    "FEATURE_NO_EFFECT (the rib stays in the tree)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -504,7 +519,8 @@ class PartDesignTools:
                 "name": "catia_slot",
                 "description": (
                     "Create a Slot: sweep a closed profile along a center curve, removing "
-                    "material. The removed volume is verified."
+                    "material. The removed volume is verified; a slot that removes no "
+                    "material fails with FEATURE_NO_EFFECT (the slot stays in the tree)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -814,13 +830,14 @@ class PartDesignTools:
         if before is not None and after is not None:
             removed = before - after
             if removed <= 0:
-                return (
-                    f"FEATURE_NO_EFFECT: pocket '{pocket.Name}' was created in "
-                    f"the tree but removed no material"
+                raise CATIAToolError(
+                    f"Pocket '{pocket.Name}' was created in the tree but removed no material"
                     + (" in the requested direction" if explicit_direction
                        else " in either direction")
-                    + f" (volume stayed {before:.1f} mm3). Check that the "
-                    "profile intersects the solid."
+                    + f" (volume stayed {before:.1f} mm3). Check that the profile "
+                    "intersects the solid, then delete the pocket with catia_delete_feature.",
+                    code="FEATURE_NO_EFFECT",
+                    modified=None,
                 )
             flip_note = " (direction auto-flipped to reach material)" if flipped else ""
             return (
@@ -949,21 +966,42 @@ class PartDesignTools:
         self.conn.refresh_display()
         return f"Chamfer created: {length} mm at {angle} deg on {scope}. Feature: '{chamfer.Name}'"
 
+    # A hole removing less than this fraction of its nominal cylinder
+    # (pi/4 * d^2 * depth) had no effect: far above the measurement noise of
+    # an unchanged solid, far below what any hole entering the solid removes.
+    _HOLE_NO_EFFECT_FRACTION = 1e-3
+
     def _hole(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
+        diameter = args["diameter"]
+        depth = args["depth"]
+        if diameter <= 0 or depth <= 0:
+            raise InvalidArgument("diameter and depth must be positive (mm).")
         part = self.conn.get_active_part()
         body = self.conn.get_active_part_body()
         sf = part.ShapeFactory
 
         sketch = self._get_last_sketch(args.get("sketch_name"))
-        diameter = args["diameter"]
-        depth = args["depth"]
+        before = self._body_volume_mm3(part, body)
 
         # AddNewHole takes a support FACE reference; the sketch-positioned
         # form is AddNewHoleFromSketch. Diameter is a read-only Length
         # parameter object whose .Value is assigned.
         hole = sf.AddNewHoleFromSketch(sketch, depth)
         hole.Diameter.Value = diameter
+        # 3DEXPERIENCE R428 ignores AddNewHoleFromSketch's depth (live: the
+        # bottom limit read 10 after asking for 20), so it is set on the
+        # bottom limit explicitly, as V5 recorded macros do, and read back.
+        hole.BottomLimit.Dimension.Value = depth
+        applied_depth = float(hole.BottomLimit.Dimension.Value)
+        if abs(applied_depth - depth) > 1e-6:
+            raise CATIAToolError(
+                f"Hole '{hole.Name}' kept a depth of "
+                f"{applied_depth:g} mm after {depth:g} mm was set on its bottom limit. "
+                "It remains in the tree; delete it with catia_delete_feature.",
+                code="WRONG_GEOMETRY_EFFECT",
+                modified=None,
+            )
         hole.BottomType = 0  # catFlatBottom
 
         hole_type = args.get("type", "simple")
@@ -983,8 +1021,36 @@ class PartDesignTools:
             hole.ThreadingMode = 1  # catThreaded
 
         part.UpdateObject(hole)
+        threshold = self._HOLE_NO_EFFECT_FRACTION * math.pi * diameter**2 * depth / 4.0
+        after = self._body_volume_mm3(part, body)
+        reversed_note = ""
+        if before is not None and after is not None and before - after <= threshold:
+            # Live R428: a hole sketched on the XY origin plane at the pad's
+            # bottom face drilled outward, into air. Reverse once, re-measure.
+            hole.Reverse()
+            part.UpdateObject(hole)
+            after = self._body_volume_mm3(part, body)
+            reversed_note = " (direction reversed to reach material)"
+            if after is not None and before - after <= threshold:
+                raise CATIAToolError(
+                    f"Hole '{hole.Name}' was created in the tree but removed no material "
+                    f"in either direction (volume {before:.1f} -> {after:.1f} mm3; the hole "
+                    "is left reversed). Check that the sketch point lies over the solid, "
+                    "then delete the hole with catia_delete_feature.",
+                    code="FEATURE_NO_EFFECT",
+                    modified=None,
+                )
         self.conn.refresh_display()
-        return f"Hole created: D{diameter} mm, depth {depth} mm. Feature: '{hole.Name}'.{type_note}"
+        summary = (
+            f"Hole '{hole.Name}' created: D{diameter} mm, depth {applied_depth:g} mm"
+            f"{reversed_note}."
+        )
+        if before is None or after is None:
+            return f"{summary} Volume verification unavailable on this installation.{type_note}"
+        return (
+            f"{summary} Removed {before - after:.1f} mm3 ({before:.1f} -> {after:.1f})."
+            f"{type_note}"
+        )
 
     def _rect_pattern(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
@@ -1280,15 +1346,20 @@ class PartDesignTools:
         if before is not None and after is not None:
             delta = after - before
             if kind == "slot" and delta >= 0:
-                return (
-                    f"FEATURE_NO_EFFECT: slot '{feature.Name}' was created in the tree "
-                    f"but removed no material (volume stayed {before:.1f} mm3). Check "
-                    "that the profile sweeps through the solid."
+                raise CATIAToolError(
+                    f"Slot '{feature.Name}' was created in the tree but removed no material "
+                    f"(volume stayed {before:.1f} mm3). Check that the profile sweeps "
+                    "through the solid, then delete the slot with catia_delete_feature.",
+                    code="FEATURE_NO_EFFECT",
+                    modified=None,
                 )
             if kind == "rib" and delta <= 0:
-                return (
-                    f"FEATURE_NO_EFFECT: rib '{feature.Name}' was created in the tree "
-                    f"but added no material (volume {before:.1f} -> {after:.1f} mm3)."
+                raise CATIAToolError(
+                    f"Rib '{feature.Name}' was created in the tree but added no material "
+                    f"(volume {before:.1f} -> {after:.1f} mm3). Delete it with "
+                    "catia_delete_feature.",
+                    code="FEATURE_NO_EFFECT",
+                    modified=None,
                 )
             return (
                 f"{kind.capitalize()} '{feature.Name}' created along '{args['center_curve']}'. "
@@ -1430,6 +1501,14 @@ class PartDesignTools:
         self.conn.refresh_display()
         return f"Color ({r}, {g}, {b}) applied to: {', '.join(names)}."
 
+    @staticmethod
+    def _is_hole(feature: Any) -> bool:
+        """Locale-independent: the COM class name from type information, or
+        the members only a Hole exposes when type information is missing."""
+        if type_name(feature) == "Hole":
+            return True
+        return name_exists(feature, "BottomLimit") and name_exists(feature, "ThreadingMode")
+
     def _user_pattern(self, args: dict[str, Any]) -> str:
         self.conn.ensure_connected()
         part = self.conn.get_active_part()
@@ -1448,6 +1527,20 @@ class PartDesignTools:
             raise ValueError(
                 "catia_user_pattern requires 'sketch_name': the points sketch "
                 "name reported by catia_close_sketch (e.g. 'Sketch.3')."
+            )
+        if self.conn.is_3dx and self._is_hole(feature):
+            # Live R428 SP6: CATIA rejects the update of a user pattern of a
+            # sketch-positioned Hole. The likely missing input is the anchor
+            # point, but DSYAutomation.chm R428 types UserPattern.AnchorPoint
+            # only as CATIABase (no SetAnchorPoint, no example), so no
+            # deterministic anchor recipe is established.
+            raise UnsupportedCapability(
+                f"catia_user_pattern cannot pattern the hole '{feature.Name}' on "
+                "3DEXPERIENCE: CATIA rejects a user pattern of a sketch-positioned Hole "
+                "on update (live R428 SP6), and the anchor point it would need "
+                "(UserPattern.AnchorPoint) has no documented recipe. Nothing was created. "
+                "Instead, draw one circle per position in a sketch and cut them with "
+                "catia_pocket, or create one catia_hole per position."
             )
         sketch = self._get_last_sketch(sketch_name)
 
@@ -1669,13 +1762,10 @@ class PartDesignTools:
         try:
             if body.Shapes.Count == 0:
                 return "No solid shape in the active body yet"
-            last_shape = body.Shapes.Item(body.Shapes.Count)
             sel = self.conn.hso
             try:
-                sel.Clear()
-                sel.Add(last_shape)
-                sel.Search("Topology.Face,sel")
-                for i in range(1, sel.Count + 1):
+                count = search_final_topology(sel, body, "Face", is_3dx=self.conn.is_3dx)
+                for i in range(1, count + 1):
                     faces.append({"index": i, "name": f"Face.{i}"})
             finally:
                 try:
@@ -1701,10 +1791,10 @@ class PartDesignTools:
             # Access boundary representation
             sel = self.conn.hso
             try:
-                sel.Clear()
-                sel.Add(last_shape)
-                sel.Search("Topology.Edge,sel")
-                for i in range(1, sel.Count + 1):
+                count = search_final_topology(
+                    sel, body, "Edge", last_shape, is_3dx=self.conn.is_3dx
+                )
+                for i in range(1, count + 1):
                     # Canonical indexed name accepted by catia_measure_distance,
                     # catia_fillet and catia_chamfer. Raw HSO names are long
                     # and unusable in searches.
