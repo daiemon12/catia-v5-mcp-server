@@ -1,4 +1,4 @@
-"""Generative Shape Design (GSD) tools for CATIA V5.
+"""Generative Shape Design (GSD) tools for CATIA V5 and CATIA 3DEXPERIENCE.
 
 Wireframe and surface creation via Part.HybridShapeFactory:
 points, lines, planes, 3D splines, circles, projections, intersections,
@@ -9,7 +9,9 @@ surfaces back into Part Design solids.
 All GSD features live in a Geometrical Set (HybridBody). Elements are
 addressed by their tree name; most creation tools accept an optional
 'name' to rename the result so later tools can reference it.
-All dimensions are in millimeters, angles in degrees.
+All dimensions are in millimeters, angles in degrees. The
+HybridShapeFactory API is the same on both platforms once the Part is
+resolved.
 """
 
 from __future__ import annotations
@@ -18,14 +20,8 @@ import json
 from typing import Any
 
 from catia_mcp.connection import CATIAConnection
-
-# Origin plane aliases (same convention as sketcher.py)
-PLANE_MAP = {
-    "xy": "PlaneXY",
-    "yz": "PlaneYZ",
-    "zx": "PlaneZX",
-    "xz": "PlaneZX",  # alias
-}
+from catia_mcp.errors import CATIAToolError
+from catia_mcp.references import find_element, iter_geosets
 
 # Schema fragment: an element addressed by tree name, or [x, y, z] coordinates
 # (coordinates create a new 3D point on the fly).
@@ -44,7 +40,7 @@ POINT_OR_NAME = {
 
 
 class GSDTools:
-    """Tools for Generative Shape Design (wireframe & surface) in CATIA V5."""
+    """Tools for Generative Shape Design (wireframe & surface), V5 and 3DEXPERIENCE."""
 
     DEFAULT_GEOSET = "GSD_Set"
 
@@ -527,6 +523,107 @@ class GSDTools:
                     "required": ["surface"],
                 },
             },
+            {
+                "name": "catia_gsd_translate",
+                "description": "Translate (copy) an element along a direction vector by a distance.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "element": {"type": "string", "description": "Element to translate"},
+                        "direction": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "description": "Direction vector [x, y, z]",
+                        },
+                        "distance": {"type": "number", "description": "Distance (mm)"},
+                        "name": {"type": "string", "description": "Optional name for the result"},
+                    },
+                    "required": ["element", "direction", "distance"],
+                },
+            },
+            {
+                "name": "catia_gsd_rotate",
+                "description": "Rotate (copy) an element around an axis line by an angle.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "element": {"type": "string", "description": "Element to rotate"},
+                        "axis": {"type": "string", "description": "Axis line element name"},
+                        "angle": {"type": "number", "description": "Angle (degrees)"},
+                        "name": {"type": "string", "description": "Optional name for the result"},
+                    },
+                    "required": ["element", "axis", "angle"],
+                },
+            },
+            {
+                "name": "catia_gsd_point_on_curve",
+                "description": (
+                    "Create a point on a curve at a fraction of its length (0 = start, "
+                    "1 = end)."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "curve": {"type": "string", "description": "Curve element name"},
+                        "ratio": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "Position as a fraction of the curve length",
+                        },
+                        "reverse": {
+                            "type": "boolean",
+                            "description": "Measure from the other end",
+                            "default": False,
+                        },
+                        "name": {"type": "string", "description": "Optional name for the point"},
+                    },
+                    "required": ["curve", "ratio"],
+                },
+            },
+            {
+                "name": "catia_gsd_extract",
+                "description": (
+                    "Extract a face or edge of the solid ('Face.N' / 'Edge.N' from "
+                    "catia_list_faces / catia_list_edges) or a GSD element as a new "
+                    "surface/curve element."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "element": {"type": "string", "description": "'Face.N', 'Edge.N' or element name"},
+                        "name": {"type": "string", "description": "Optional name for the result"},
+                    },
+                    "required": ["element"],
+                },
+            },
+            {
+                "name": "catia_gsd_shape_fillet",
+                "description": (
+                    "Create a bi-tangent shape fillet surface of constant radius between "
+                    "two surfaces, trimming both supports. Use the reverse flags to pick "
+                    "the fillet side on each surface."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "surface1": {"type": "string", "description": "First surface element name"},
+                        "surface2": {"type": "string", "description": "Second surface element name"},
+                        "radius": {"type": "number", "description": "Fillet radius (mm)"},
+                        "reverse1": {"type": "boolean", "description": "Flip side on surface1", "default": False},
+                        "reverse2": {"type": "boolean", "description": "Flip side on surface2", "default": False},
+                        "trim": {
+                            "type": "boolean",
+                            "description": "Trim the supports and join them with the fillet (default true)",
+                            "default": True,
+                        },
+                        "name": {"type": "string", "description": "Optional name for the result"},
+                    },
+                    "required": ["surface1", "surface2", "radius"],
+                },
+            },
         ]
 
     # ────────────────────────────────────────────────────────────
@@ -534,6 +631,17 @@ class GSDTools:
     # ────────────────────────────────────────────────────────────
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        self._created_points = 0
+        try:
+            return self._dispatch(tool_name, arguments)
+        except CATIAToolError as error:
+            # [x, y, z] point specs create points before later elements are
+            # resolved; a lookup failure after that is not "unmodified".
+            if self._created_points:
+                error.modified = None
+            raise
+
+    def _dispatch(self, tool_name: str, arguments: dict[str, Any]) -> str:
         match tool_name:
             case "catia_gsd_create_geoset":
                 return self._create_geoset(arguments)
@@ -583,6 +691,16 @@ class GSDTools:
                 return self._thick_surface(arguments)
             case "catia_gsd_close_surface":
                 return self._close_surface(arguments)
+            case "catia_gsd_translate":
+                return self._translate(arguments)
+            case "catia_gsd_rotate":
+                return self._rotate(arguments)
+            case "catia_gsd_point_on_curve":
+                return self._point_on_curve(arguments)
+            case "catia_gsd_extract":
+                return self._extract(arguments)
+            case "catia_gsd_shape_fillet":
+                return self._shape_fillet(arguments)
             case _:
                 raise ValueError(f"Unknown GSD tool: {tool_name}")
 
@@ -595,13 +713,7 @@ class GSDTools:
 
     def _iter_geosets(self, hybrid_bodies: Any):
         """Yield all geometrical sets, including nested ones."""
-        for i in range(1, hybrid_bodies.Count + 1):
-            hb = hybrid_bodies.Item(i)
-            yield hb
-            try:
-                yield from self._iter_geosets(hb.HybridBodies)
-            except Exception:
-                pass
+        return iter_geosets(hybrid_bodies)
 
     def _get_geoset(self) -> Any:
         """Get the active geometrical set, falling back to the first existing
@@ -633,30 +745,7 @@ class GSDTools:
         sketches in all geometrical sets (nested included), then sketches
         in solid bodies.
         """
-        part = self.conn.get_active_part()
-
-        key = name.lower()
-        if key in PLANE_MAP:
-            return getattr(part.OriginElements, PLANE_MAP[key])
-
-        for hb in self._iter_geosets(part.HybridBodies):
-            for collection in ("HybridShapes", "HybridSketches"):
-                try:
-                    return getattr(hb, collection).Item(name)
-                except Exception:
-                    pass
-
-        bodies = part.Bodies
-        for i in range(1, bodies.Count + 1):
-            try:
-                return bodies.Item(i).Sketches.Item(name)
-            except Exception:
-                pass
-
-        raise RuntimeError(
-            f"Element '{name}' not found in geometrical sets or body sketches. "
-            "Use catia_gsd_list_elements to see available element names."
-        )
+        return find_element(self.conn.get_active_part(), name)
 
     def _ref(self, name: str) -> Any:
         """Get a Reference to a named element."""
@@ -673,6 +762,7 @@ class GSDTools:
         if isinstance(spec, (list, tuple)) and len(spec) == 3:
             part = self.conn.get_active_part()
             point = self._factory().AddNewPointCoord(spec[0], spec[1], spec[2])
+            self._created_points = getattr(self, "_created_points", 0) + 1
             self._get_geoset().AppendHybridShape(point)
             part.UpdateObject(point)
             return part.CreateReferenceFromObject(point)
@@ -686,7 +776,7 @@ class GSDTools:
             part.UpdateObject(feature)
         except Exception as e:
             try:
-                selection = self.conn.active_document.Selection
+                selection = self.conn.hso
                 selection.Clear()
                 selection.Add(feature)
                 selection.Delete()
@@ -1064,3 +1154,75 @@ class GSDTools:
         self._safe_update(close)
         self.conn.refresh_display()
         return f"CloseSurface solid created from '{args['surface']}'. Feature: '{close.Name}'"
+
+    # ────────────────────────────────────────────────────────────
+    # Transformations and extra wireframe/surface operations
+    # ────────────────────────────────────────────────────────────
+
+    def _translate(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        factory = self._factory()
+        elem_ref = self._ref(args["element"])
+        dx, dy, dz = args["direction"]
+        distance = args["distance"]
+        direction = factory.AddNewDirectionByCoord(dx, dy, dz)
+        translate = factory.AddNewTranslate(elem_ref, direction, distance)
+        return self._finish(
+            translate, args.get("name"),
+            f"Translation of '{args['element']}' by {distance} mm along [{dx}, {dy}, {dz}] created.",
+        )
+
+    def _rotate(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        elem_ref = self._ref(args["element"])
+        axis_ref = self._ref(args["axis"])
+        angle = args["angle"]
+        rotate = self._factory().AddNewRotate(elem_ref, axis_ref, angle)
+        return self._finish(
+            rotate, args.get("name"),
+            f"Rotation of '{args['element']}' by {angle} deg around '{args['axis']}' created.",
+        )
+
+    def _point_on_curve(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        curve_ref = self._ref(args["curve"])
+        ratio = float(args["ratio"])
+        reverse = bool(args.get("reverse", False))
+        # AddNewPointOnCurveFromPercent(curve, ratio of the length, orientation)
+        point = self._factory().AddNewPointOnCurveFromPercent(curve_ref, ratio, reverse)
+        return self._finish(
+            point, args.get("name"),
+            f"Point created on '{args['curve']}' at {ratio:.0%} of its length"
+            f"{' (from the end)' if reverse else ''}.",
+        )
+
+    def _extract(self, args: dict[str, Any]) -> str:
+        from catia_mcp.references import topology_match, topology_reference
+
+        self.conn.ensure_connected()
+        element = args["element"]
+        topo = topology_match(element)
+        if topo:
+            ref = topology_reference(self.conn, topo[0], topo[1])
+        else:
+            ref = self._ref(element)
+        extract = self._factory().AddNewExtract(ref)
+        return self._finish(extract, args.get("name"), f"Extract of '{element}' created.")
+
+    def _shape_fillet(self, args: dict[str, Any]) -> str:
+        self.conn.ensure_connected()
+        ref1 = self._ref(args["surface1"])
+        ref2 = self._ref(args["surface2"])
+        radius = args["radius"]
+        orient1 = -1 if args.get("reverse1", False) else 1
+        orient2 = -1 if args.get("reverse2", False) else 1
+        trim = 1 if args.get("trim", True) else 0
+        # AddNewFilletBiTangent(element1, element2, radius, orientation1,
+        #     orientation2, supports trim mode, ribbon relimitation mode)
+        fillet = self._factory().AddNewFilletBiTangent(
+            ref1, ref2, radius, orient1, orient2, trim, 0
+        )
+        return self._finish(
+            fillet, args.get("name"),
+            f"Shape fillet R{radius} mm between '{args['surface1']}' and '{args['surface2']}' created.",
+        )
