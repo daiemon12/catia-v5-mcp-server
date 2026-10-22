@@ -51,6 +51,19 @@ For each change:
 6. Add a live CATIA probe for any behavior that mocks cannot establish, especially COM apartment behavior, CATIA API signatures, BRep references, update diagnostics, and modal UI.
 7. Update capability classification only after the implementation and validation evidence agree.
 
+## Platform layer (CATIA V5 and 3DEXPERIENCE)
+
+The server drives CATIA V5 and CATIA 3DEXPERIENCE with the same tools. Tools must not reach for platform-specific roots directly:
+
+- get the Part, body, selection, window and product through `CATIAConnection` (`get_active_part`, `get_active_part_body`, `hso`, `active_window`, `root_occurrence`);
+- measure through `catia_mcp.measure.Measurer`, never `GetWorkbench("SPAWorkbench")` in a tool;
+- create/open/save/search 3DEXPERIENCE content through `catia_mcp.plm.PLMSession`;
+- read out-parameters and filled arrays through `catia_mcp.automation` (SystemService.Evaluate detour);
+- branch on `conn.is_3dx` only where the object models genuinely differ, and keep the V5 branch byte-for-byte when it is field-validated;
+- report a capability missing on one platform with `UnsupportedCapability` before touching CATIA, and wrap code that runs after a mutation in `errors.after_mutation()`.
+
+3DEXPERIENCE paths are contract-tested offline (`tests/test_3dexperience.py`, doubles in `tests/fakes.py`); live validation uses `scripts/live_smoke_test.py`. See `docs/3dexperience.md`.
+
 ## Runtime execution contract
 
 The target runtime should separate asynchronous MCP transport from CATIA execution:

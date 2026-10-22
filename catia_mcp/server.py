@@ -16,7 +16,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, TextContent, Tool
 
-from catia_mcp.connection import CATIAConnection
+from catia_mcp.connection import CATIAConnection, normalize_platform
+from catia_mcp.errors import CATIAToolError
 from catia_mcp.results import operation_result
 from catia_mcp.tools.assembly import AssemblyTools
 from catia_mcp.tools.diagnostics import DiagnosticsTools
@@ -24,9 +25,11 @@ from catia_mcp.tools.document import DocumentTools
 from catia_mcp.tools.drawing import DraftingTools
 from catia_mcp.tools.export import ExportTools
 from catia_mcp.tools.gsd import GSDTools
+from catia_mcp.tools.introspection import IntrospectionTools
 from catia_mcp.tools.knowledge import KnowledgeTools
 from catia_mcp.tools.measurement import MeasurementTools
 from catia_mcp.tools.part_design import PartDesignTools
+from catia_mcp.tools.plm import PLMTools
 from catia_mcp.tools.sketcher import SketcherTools
 
 logging.basicConfig(
@@ -70,10 +73,34 @@ def failure(
     )
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def unsupported_message(name: str, error: Exception, is_3dx: bool) -> str:
+    message = (
+        f"UNSUPPORTED_CAPABILITY in {name}: the required CATIA automation API "
+        f"did not resolve ({error}). The API may be absent from this CATIA release, "
+        "or a stale pywin32 gen_py cache may be blocking resolution. Clearing caches "
+        "cannot add an absent API. For a stale cache, close CATIA and the server, "
+        "delete the %TEMP%\\gen_py folder, restart and retry once. A missing "
+        "workbench licence can also lock methods. Run catia_diagnose for details."
+    )
+    if is_3dx:
+        message += (
+            " On 3DEXPERIENCE, member names can differ from V5: catia_inspect_api lists "
+            "what this installation exposes, and DSYAutomation.chm (win_b64\\code\\bin) "
+            "documents it. Your role/licence also gates some services."
+        )
+    return message
+
+
 class CATIAMCPServer:
-    def __init__(self) -> None:
-        self.server = Server("catia-v5-mcp")
-        self.connection = CATIAConnection()
+    def __init__(self, platform: str | None = None, allow_scripts: bool | None = None) -> None:
+        self.server = Server("catia-mcp")
+        self.connection = CATIAConnection(platform)
+        if allow_scripts is None:
+            allow_scripts = _env_flag("CATIA_MCP_ALLOW_SCRIPTS")
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="catia-sta")
         self.document_tools = DocumentTools(self.connection)
         self.sketcher_tools = SketcherTools(self.connection)
@@ -85,6 +112,8 @@ class CATIAMCPServer:
         self.assembly_tools = AssemblyTools(self.connection)
         self.measurement_tools = MeasurementTools(self.connection)
         self.export_tools = ExportTools(self.connection)
+        self.plm_tools = PLMTools(self.connection)
+        self.introspection_tools = IntrospectionTools(self.connection, allow_scripts)
         self._tool_modules = [
             self.document_tools,
             self.sketcher_tools,
@@ -96,6 +125,8 @@ class CATIAMCPServer:
             self.assembly_tools,
             self.measurement_tools,
             self.export_tools,
+            self.plm_tools,
+            self.introspection_tools,
         ]
         self._tool_router: dict[str, Any] = {}
         self._schemas: dict[str, dict] = {}
@@ -153,19 +184,15 @@ class CATIAMCPServer:
                 return structured_result(result)
             logger.info("Tool result: %s", result[:200])
             return CallToolResult(content=[TextContent(type="text", text=result)])
+        except CATIAToolError as error:
+            logger.warning("Tool failed: %s: %s %s", name, error.code, error)
+            return failure(error.code, str(error), stage, error.modified, name)
         except Exception as error:
             logger.exception("Tool failed: %s: %s", name, error)  # noqa: TRY401 -- log preview includes the error message
             code = "UNSUPPORTED_CAPABILITY" if isinstance(error, AttributeError) else "COM_ERROR"
             message = str(error)
             if code == "UNSUPPORTED_CAPABILITY":
-                message = (
-                    f"UNSUPPORTED_CAPABILITY in {name}: the required CATIA automation API "
-                    f"did not resolve ({error}). The API may be absent from this CATIA release, "
-                    "or a stale pywin32 gen_py cache may be blocking resolution. Clearing caches "
-                    "cannot add an absent API. For a stale cache, close CATIA and the server, "
-                    "delete the %TEMP%\\gen_py folder, restart and retry once. A missing "
-                    "workbench licence can also lock methods. Run catia_diagnose for details."
-                )
+                message = unsupported_message(name, error, self.connection.is_3dx)
             return failure(code, message, stage, False if stage == "connect" else None, name)
 
     async def close(self) -> None:
@@ -177,7 +204,7 @@ class CATIAMCPServer:
             self._executor.shutdown(wait=True)
 
     async def run(self) -> None:
-        logger.info("Starting CATIA V5 MCP Server: %d tools", len(self._tool_router))
+        logger.info("Starting CATIA MCP Server: %d tools", len(self._tool_router))
         try:
             async with stdio_server() as (read_stream, write_stream):
                 await self.server.run(
@@ -190,7 +217,7 @@ class CATIAMCPServer:
     async def run_http(self, host: str, port: int, token: str | None) -> None:
         from catia_mcp.http_transport import serve
 
-        logger.info("Starting CATIA V5 MCP Server (HTTP): %d tools", len(self._tool_router))
+        logger.info("Starting CATIA MCP Server (HTTP): %d tools", len(self._tool_router))
         try:
             await serve(self.server, host, port, token)
         finally:
@@ -202,7 +229,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         prog="catia-mcp",
-        description="CATIA V5 MCP server. Uses stdio by default; --http serves remote agents.",
+        description=(
+            "CATIA MCP server for CATIA V5 and CATIA 3DEXPERIENCE. Uses stdio by "
+            "default; --http serves remote agents."
+        ),
     )
     parser.add_argument(
         "--http",
@@ -220,7 +250,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--new-token", action="store_true", help="Print a fresh random token and exit"
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--platform",
+        default=os.environ.get("CATIA_MCP_PLATFORM", "auto"),
+        help="CATIA platform: auto (default, detected on connect), v5 or 3dx "
+        "(default: CATIA_MCP_PLATFORM env var)",
+    )
+    parser.add_argument(
+        "--allow-scripts",
+        action="store_true",
+        default=_env_flag("CATIA_MCP_ALLOW_SCRIPTS"),
+        help="Enable catia_run_script (VBScript inside CATIA, full user rights). "
+        "Off by default (env: CATIA_MCP_ALLOW_SCRIPTS=1).",
+    )
+    args = parser.parse_args(argv)
+    try:
+        normalize_platform(args.platform)
+    except ValueError as error:
+        parser.error(str(error))
+    return args
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -234,9 +282,10 @@ def main(argv: list[str] | None = None) -> None:
         from catia_mcp.http_transport import check_bind
 
         check_bind(args.host, args.token)
-        asyncio.run(CATIAMCPServer().run_http(args.host, args.port, args.token))
+        server = CATIAMCPServer(args.platform, args.allow_scripts)
+        asyncio.run(server.run_http(args.host, args.port, args.token))
         return
-    asyncio.run(CATIAMCPServer().run())
+    asyncio.run(CATIAMCPServer(args.platform, args.allow_scripts).run())
 
 
 if __name__ == "__main__":

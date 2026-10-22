@@ -5,18 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "catia-v5-mcp-server"
 version = "0.2.2"
-description = "MCP Server for CATIA V5 - Connect Claude AI to Dassault Systèmes CATIA V5 via COM Automation"
+description = "MCP Server for CATIA V5 and CATIA 3DEXPERIENCE (V6) - Connect AI agents to Dassault Systèmes CATIA via COM Automation"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
     { name = "Adam M'HAMDI" },
 ]
-keywords = ["catia", "catia-v5", "mcp", "claude", "dassault-systemes", "cao", "cad", "automation"]
+keywords = ["catia", "catia-v5", "catia-v6", "3dexperience", "mcp", "claude", "dassault-systemes", "cao", "cad", "automation"]
 
 dependencies = [
     "mcp>=1.27.0,<2",
-    "pywin32>=306",
+    # COM automation only exists on Windows; the marker lets the offline
+    # test suite install on other platforms.
+    "pywin32>=306; sys_platform == 'win32'",
     "jsonschema>=4.20,<5",
 ]
 

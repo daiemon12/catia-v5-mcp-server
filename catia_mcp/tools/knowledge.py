@@ -1,8 +1,8 @@
-"""Knowledgeware tools for CATIA V5.
+"""Knowledgeware tools for CATIA V5 and CATIA 3DEXPERIENCE.
 
 Parameters, formulas, design tables and relation listing on the active
 Part, through the documented Parameters / Relations automation
-interfaces. Lengths and angles are valuated from strings with explicit
+interfaces (identical on both platforms once the Part is resolved). Lengths and angles are valuated from strings with explicit
 units ("20mm", "45deg"), which sidesteps the magnitude/unit ambiguity of
 Dimension.Value.
 """
@@ -18,7 +18,7 @@ _UNITS = {"length": "mm", "angle": "deg"}
 
 
 class KnowledgeTools:
-    """Tools for CATIA V5 Knowledgeware (parameters, formulas, design tables)."""
+    """Tools for CATIA Knowledgeware (parameters, formulas, design tables)."""
 
     def __init__(self, connection: CATIAConnection) -> None:
         self.conn = connection
