@@ -21,6 +21,24 @@ _M2_TO_MM2 = 1e6
 _M3_TO_MM3 = 1e9
 
 
+def _bound_measurable(measurable: Any) -> Any:
+    """Re-dispatch a late-bound SPA Measurable.
+
+    On V5-6R2020 (B30), Measurable scalars obtained through pywin32
+    late-bound dynamic dispatch (Volume, Area) read 0; re-wrapping the
+    object with ``win32com.client.Dispatch`` binds its type information and
+    yields real values (field-verified against exact primitive volumes,
+    e.g. a sphere at 4/3*pi*R^3). The re-wrap is a no-op where the dispatch
+    already carries type info (e.g. V5R20 environments).
+    """
+    try:
+        import win32com.client
+
+        return win32com.client.Dispatch(measurable)
+    except Exception:
+        return measurable
+
+
 def read_measurable_array(app: Any, measurable: Any, method: str, count: int) -> list[float]:
     """Run `measurable.<method> a` inside CATIA via SystemService.Evaluate and
     return the filled array (field-proven on V5R20 for GetCOG/GetPlane).
@@ -279,7 +297,7 @@ class MeasurementTools:
 
         # Area/Volume are MKS (field-confirmed); the minimum distance is
         # assumed MKS too and converted to mm. Not yet field-verified.
-        measurable = spa.GetMeasurable(ref1)
+        measurable = _bound_measurable(spa.GetMeasurable(ref1))
         distance = measurable.GetMinimumDistance(ref2) * _M_TO_MM
 
         return f"Minimum distance between '{elem1_name}' and '{elem2_name}': {distance:.4f} mm"
@@ -291,7 +309,7 @@ class MeasurementTools:
         body = self.conn.get_active_part_body()
         ref = part.CreateReferenceFromObject(body)
 
-        measurable = spa.GetMeasurable(ref)
+        measurable = _bound_measurable(spa.GetMeasurable(ref))
 
         result: dict[str, Any] = {}
         volume_m3: float | None = None

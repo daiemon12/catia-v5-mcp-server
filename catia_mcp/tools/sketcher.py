@@ -297,10 +297,28 @@ class SketcherTools:
         sketches = body.Sketches
         sketch = sketches.Add(ref)
 
-        # Open the sketch for editing
+        # Open the sketch for editing. V5-6R2020: the first OpenEdition can
+        # return None; close/recreate the sketch and retry once before
+        # giving up.
         self._active_sketch = sketch
         self._sketch_part = part
-        self._active_factory = sketch.OpenEdition()
+        try:
+            factory = sketch.OpenEdition()
+        except Exception:
+            factory = None
+        if factory is None:
+            try:
+                sketch.CloseEdition()
+            except Exception:
+                pass
+            sketch = sketches.Add(ref)
+            factory = sketch.OpenEdition()
+            if factory is None:
+                raise RuntimeError(
+                    "Failed to open sketch edition: OpenEdition returned None twice."
+                )
+            self._active_sketch = sketch
+        self._active_factory = factory
 
         plane_names = {"xy": "XY (front)", "yz": "YZ (right)", "zx": "ZX (top)"}
         return f"Sketch created on {plane_names.get(plane_key, plane)} plane. Ready for geometry."
@@ -480,6 +498,12 @@ class SketcherTools:
                 if idx2 is None:
                     raise ValueError("Angle constraint requires 'geometry_index_2'.")
                 cst = constraints.AddBiEltCst(self._CST_ANGLE, _ref(idx1), _ref(idx2))
+            try:
+                # V5-6R2020: dimensional constraints must be driving to take
+                # the value (CatConstraintMode: driving = 0).
+                cst.Mode = 0
+            except Exception:
+                pass
             cst.Dimension.Value = value
 
             unit = "deg" if constraint_type == "angle" else "mm"
@@ -504,6 +528,13 @@ class SketcherTools:
             if idx1 is None:
                 raise ValueError(f"Constraint '{constraint_type}' requires 'geometry_index_1'.")
             cst = constraints.AddMonoEltCst(cst_code, _ref(idx1))
+            if constraint_type == "fix":
+                try:
+                    # Fix-in-space needs the reference type set explicitly
+                    # (CatConstraintReferenceType: fix in space = 1).
+                    cst.ReferenceType = 1
+                except Exception:
+                    pass
         else:
             if idx1 is None or idx2 is None:
                 raise ValueError(

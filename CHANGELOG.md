@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- Part Design, field evidence on V5-6R2020 (B30), signatures checked against
+  the B30 type libraries:
+  - Shaft/Groove set `RevoluteAxis` from the sketch's `AbsoluteAxis.VDirection`
+    (a drawn-line axis raises E_FAIL; wrapping the sketch raises
+    DISP_E_BADTYPE) and assign `FirstAngle` through the parameter object,
+    because direct property PUTs fail on factory-returned objects under
+    dynamic dispatch.
+  - Hole threading is applied AFTER the hole materializes, with
+    `ThreadingMode = 0` (B30 type libraries: 0 = threaded, 1 = smooth;
+    threading before the first update breaks the rebuild).
+  - Pad/Pocket/Hole/Shaft/Groove force the sketch's owning body in-work when
+    the in-work object is a Geometrical Set (fresh documents fail with
+    E_FAIL otherwise).
+  - Pocket gains a `symmetric` option (`IsSymmetric`, mirrored extent).
+  - SPA `Measurable` scalars are re-dispatched through
+    `win32com.client.Dispatch`: on B30, late-bound dynamic dispatch reads
+    `Volume`/`Area` as 0 (verified against exact primitive volumes, e.g. a
+    sphere at 4/3*pi*R^3); the re-wrap is a no-op where the dispatch already
+    carries type info.
+- Sketcher: dimensional constraints set driving mode (`Mode = 0`) before
+  `Dimension.Value`; `fix` sets `ReferenceType = 1` (fix in space);
+  `OpenEdition()` returning `None` is retried once.
+
 ### Changed
 - CATIA calls and connection cleanup run serially on one STA worker. Ordinary
   errors and client cancellations do not lock the server; queued calls run after
