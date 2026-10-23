@@ -670,7 +670,12 @@ class PartDesignTools:
             # V5-6R2020, where DirectionOrientation is accepted but may not
             # flip the cut side. Set through the parameter-object fallback:
             # direct PUTs can fail on factory-returned objects.
-            _set_prop(pocket, "IsSymmetric", True)
+            if not _set_prop(pocket, "IsSymmetric", True):
+                raise RuntimeError(
+                    f"Pocket '{pocket.Name}' was created but CATIA rejected the symmetric "
+                    "extent, so it is one-sided. Delete it with catia_delete_feature or "
+                    "retry without 'symmetric'."
+                )
         else:
             # A pocket cuts on one side of the profile's support plane only,
             # so the orientation is set explicitly in both cases
@@ -748,7 +753,11 @@ class PartDesignTools:
         abs_axis = sketch.GeometricElements.Item("AbsoluteAxis")
         vdir = abs_axis.GetItem("VDirection")
         shaft.RevoluteAxis = part.CreateReferenceFromObject(vdir)
-        _set_prop(shaft, "FirstAngle", angle)
+        if not _set_prop(shaft, "FirstAngle", angle):
+            raise RuntimeError(
+                f"Shaft '{shaft.Name}' was created but its angle could not be set to "
+                f"{angle} degrees. Delete it with catia_delete_feature before retrying."
+            )
 
         try:
             part.UpdateObject(shaft)
@@ -774,7 +783,11 @@ class PartDesignTools:
         abs_axis = sketch.GeometricElements.Item("AbsoluteAxis")
         vdir = abs_axis.GetItem("VDirection")
         groove.RevoluteAxis = part.CreateReferenceFromObject(vdir)
-        _set_prop(groove, "FirstAngle", angle)
+        if not _set_prop(groove, "FirstAngle", angle):
+            raise RuntimeError(
+                f"Groove '{groove.Name}' was created but its angle could not be set to "
+                f"{angle} degrees. Delete it with catia_delete_feature before retrying."
+            )
 
         try:
             part.UpdateObject(groove)
@@ -941,11 +954,19 @@ class PartDesignTools:
             # V5-6R2020: threading a hole that has not materialized yet
             # breaks the rebuild, so apply it AFTER the first update. B30
             # type libraries: CatHoleThreadingMode threaded = 0 (1 = smooth).
-            if _set_prop(hole, "ThreadingMode", 0):
-                try:
-                    part.Update()
-                except Exception:
-                    pass
+            if not _set_prop(hole, "ThreadingMode", 0):
+                raise RuntimeError(
+                    f"Hole '{hole.Name}' was created but CATIA rejected the threading "
+                    "mode, so it is smooth. Retry without 'threaded' or thread it in CATIA."
+                )
+            try:
+                part.Update()
+            except Exception as error:
+                raise RuntimeError(
+                    f"Hole '{hole.Name}' was threaded but the part update failed ({error}). "
+                    "Inspect the hole in CATIA before continuing."
+                ) from error
+            type_note += " Threaded."
         self.conn.refresh_display()
         return f"Hole created: D{diameter} mm, depth {depth} mm. Feature: '{hole.Name}'.{type_note}"
 
