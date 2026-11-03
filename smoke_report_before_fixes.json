@@ -1,0 +1,553 @@
+{
+  "platform": "CATIA (platform not detected yet)",
+  "passed": 46,
+  "skipped": 0,
+  "failed": 4,
+  "results": [
+    {
+      "tool": "catia_connect",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.04,
+      "note": "",
+      "output": "Connected to running CATIA 3DEXPERIENCE instance (3DEXPERIENCE)"
+    },
+    {
+      "tool": "catia_diagnose",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.24,
+      "note": "",
+      "output": "{\n  \"python\": {\n    \"python_version\": \"3.15.0\",\n    \"com_binding\": \"CDispatch\",\n    \"pywin32_build\": \"unknown\",\n    \"gen_py_cache\": \"C:\\\\Users\\\\CALEIG~1.STR\\\\AppData\\\\Local\\\\Temp\\\\gen_py\\\\3.15\",\n    \"gen_py_entries\": 2\n  },\n  \"catia\": {\n    \"caption\": \"3DEXPERIENCE\",\n    \"version\": 6,\n    \"release\": 428,\n    \"service_pack\": 6,\n    \"full_name\": \"C:\\\\Program Files\\\\Dassault Systemes\\\\B428_Cloud\\\\win_b64\\\\code\\\\bin\\\\3DEXPERIENCE.exe\",\n    \"platform\": \"CATIA 3DEXPERIENCE\"\n  },\n  \"plm\": {\n    \"session_services\": {\n      \"PLMNewService\": \"available\",\n      \"PLMOpenService\": \"available\",\n      \"PLMPropagateService\": \"available\",\n      \"Search\": \"available\"\n    },\n    \"editor\": \"No active editor: create or open content, then re-run.\"\n  },\n  \"factories\": {\n    \"skipped\": \"No active Part. Create or open a Part (V5 CATPart, 3DEXPERIENCE 3D Part or 3D Shape), then run catia_diagnose again to probe the factories.\"\n  },\n  \"notes\": [\n    \"3DEXPERIENCE: creating a 3D Part or Physical Product from automation needs an extra licence/role on many sites (3D Shape and Drawing always work); STEP export needs the exchange licence. The full automation reference is DSYAutomation.chm in win_b64\\\\code\\\\bin of the installation; catia_inspect_api reads the same API live.\"\n  ]\n}"
+    },
+    {
+      "tool": "catia_new_part",
+      "args": {
+        "name": "MCP_Smoke_20261013_155152"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 55.56,
+      "note": "",
+      "output": "Created new 3DShape 'MCP_Smoke_20261013_155152' in the session (not yet saved to the database). A 3D Part could not be created (3DPart: (-2147352567, 'Exception occurred.', (0, None, 'ExecuteScript(Evaluate, MemoryMacro, catia_mcp_obj)\\nExecution error\\n(The scripting engine for CATScript has reported the following error:\\n\\nSource: CATIAPLMNewService\\nDescription: The method PLMCreate failed\\nLine: 3\\nColumn: 4\\n)\\n', None, 0, -2147467259), None)), so a 3D Shape was created instead; it has no product node of its own."
+    },
+    {
+      "tool": "catia_get_active_document_info",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.09,
+      "note": "",
+      "output": "{\n  \"platform\": \"3DEXPERIENCE\",\n  \"type\": \"part\",\n  \"title\": \"MCP_Smoke_20261013_155152\",\n  \"plm_attributes\": {\n    \"V_Name\": \"MCP_Smoke_20261013_155152\",\n    \"PLM_ExternalID\": \"3sh-OI000045741-00565979\",\n    \"originated\": \"12/31/1969 5:00:00 PM\",\n    \"modified\": \"12/31/1969 5:00:00 PM\",\n    \"V_discipline\": \"Design\",\n    \"V_usage\": \"3DShape\"\n  },\n  \"part_name\": \"MCP_Smoke_20261013_155152\",\n  \"bodies\": [\n    {\n      \"name\": \"PartBody\",\n      \"features\": []\n    }\n  ],\n  \"active_body\": \"PartBody\",\n  \"geometrical_sets\": [],\n  \"parameters_count\": 0\n}"
+    },
+    {
+      "tool": "catia_create_sketch",
+      "args": {
+        "plane": "xy"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.25,
+      "note": "",
+      "output": "Sketch 'Sketch.1' created on XY (front) plane. Ready for geometry."
+    },
+    {
+      "tool": "catia_sketch_centered_rectangle",
+      "args": {
+        "width": 100.0,
+        "height": 60.0
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.05,
+      "note": "",
+      "output": "Rectangle created from (-50.0, -30.0) to (50.0, 30.0) mm [100.0 x 60.0 mm]"
+    },
+    {
+      "tool": "catia_close_sketch",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.05,
+      "note": "",
+      "output": "Sketch 'Sketch.1' closed. You can now apply Part Design features (pad, pocket, user pattern on its points, etc.)."
+    },
+    {
+      "tool": "catia_pad",
+      "args": {
+        "height": 40.0
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.18,
+      "note": "",
+      "output": "Pad created: 40.0 mm (normal). Feature: 'Pad.1'"
+    },
+    {
+      "tool": "catia_get_inertia",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.33,
+      "note": "volume 240000.0 mm3 OK",
+      "output": "{\n  \"volume_mm3\": 240000.0,\n  \"volume_cm3\": 240.0,\n  \"area_mm2\": 24800.0,\n  \"area_cm2\": 248.0,\n  \"center_of_gravity_mm\": \"unavailable: (-2147352567, 'Exception occurred.', (0, None, \\\"ExecuteScript(Evaluate, MemoryMacro, catia_mcp_fill)\\\\nExecution error\\\\n(The scripting engine for CATScript has reported the following error:\\\\n\\\\nSource: Microsoft VBScript runtime error\\\\nDescription: Object doesn't support this property or method: 'o.GetCOG'\\\\nLine: 3\\\\nColumn: 4\\\\n)\\\\n\\\", None, 0, -2147467259), None)\",\n  \"mass_from_material_kg\": 1.8648,\n  \"inertia_matrix_kg_m2\": [\n    [\n      0.0008,\n      0.0,\n      0.0\n    ],\n    [\n      0.0,\n      0.0018,\n      0.0\n    ],\n    [\n      0.0,\n      0.0,\n      0.0021\n    ]\n  ],\n  \"inertia_cog_raw\": [\n    0.0,\n    0.0,\n    0.02\n  ],\n  \"units_note\": \"3DEXPERIENCE: volume/area converted from MKS (m3/m2) as on V5; coordinates taken as mm. Not yet live-validated on 3DEXPERIENCE: check one known part.\"\n}"
+    },
+    {
+      "tool": "catia_get_bounding_box",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.6,
+      "note": "bbox [40.0, 60.0, 100.0] OK",
+      "output": "{\n  \"min\": {\n    \"x\": -50.0,\n    \"y\": -30.0,\n    \"z\": 0.0\n  },\n  \"max\": {\n    \"x\": 50.0,\n    \"y\": 30.0,\n    \"z\": 40.0\n  },\n  \"dimensions\": {\n    \"length_x\": 100.0,\n    \"length_y\": 60.0,\n    \"length_z\": 40.0\n  },\n  \"method\": \"vertex sweep over 8 vertices of the final shape; exact for planar-faced solids, curved faces may extend beyond these bounds\"\n}"
+    },
+    {
+      "tool": "catia_list_faces",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.23,
+      "note": "",
+      "output": "[\n  {\n    \"index\": 1,\n    \"name\": \"Face.1\"\n  },\n  {\n    \"index\": 2,\n    \"name\": \"Face.2\"\n  },\n  {\n    \"index\": 3,\n    \"name\": \"Face.3\"\n  },\n  {\n    \"index\": 4,\n    \"name\": \"Face.4\"\n  },\n  {\n    \"index\": 5,\n    \"name\": \"Face.5\"\n  },\n  {\n    \"index\": 6,\n    \"name\": \"Face.6\"\n  }\n]"
+    },
+    {
+      "tool": "catia_list_edges",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.16,
+      "note": "",
+      "output": "[\n  {\n    \"index\": 1,\n    \"name\": \"Edge.1\"\n  },\n  {\n    \"index\": 2,\n    \"name\": \"Edge.2\"\n  },\n  {\n    \"index\": 3,\n    \"name\": \"Edge.3\"\n  },\n  {\n    \"index\": 4,\n    \"name\": \"Edge.4\"\n  },\n  {\n    \"index\": 5,\n    \"name\": \"Edge.5\"\n  },\n  {\n    \"index\": 6,\n    \"name\": \"Edge.6\"\n  },\n  {\n    \"index\": 7,\n    \"name\": \"Edge.7\"\n  },\n  {\n    \"index\": 8,\n    \"name\": \"Edge.8\"\n  },\n  {\n    \"index\": 9,\n    \"name\": \"Edge.9\"\n  },\n  {\n    \"index\": 10,\n    \"name\": \"Edge.10\"\n  },\n  {\n    \"index\": 11,\n    \"name\": \"Edge.11\"\n  },\n  {\n    \"index\": 12,\n    \"name\": \"Edge.12\"\n  }\n]"
+    },
+    {
+      "tool": "catia_measure_element",
+      "args": {
+        "element": "Face.1"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.58,
+      "note": "",
+      "output": "{\n  \"element\": \"Face.1\",\n  \"area_mm2\": 6000.0,\n  \"units_note\": \"3DEXPERIENCE: volume/area converted from MKS (m3/m2) as on V5; coordinates taken as mm. Not yet live-validated on 3DEXPERIENCE: check one known part.\"\n}"
+    },
+    {
+      "tool": "catia_measure_distance",
+      "args": {
+        "element1": "Face.1",
+        "element2": "Face.2"
+      },
+      "ok": false,
+      "status": "FAIL",
+      "seconds": 0.34,
+      "note": "",
+      "output": "{\n  \"ok\": false,\n  \"code\": \"UNSUPPORTED_CAPABILITY\",\n  \"operation_id\": \"1fc5ac7ada254eafb489c69de556e852\",\n  \"tool\": \"catia_measure_distance\",\n  \"message\": \"MeasurableService.GetMeasurable gave no distance measurable for this element (tried CATMeasurableType codes [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; last error: None). Check the element type, or inspect the API with catia_inspect_api path='editor.GetService(\\\"MeasurableService\\\")'.\",\n  \"data\": {\n    \"failure_stage\": \"execute\"\n  },\n  \"effects\": {\n    \"modified\": false\n  },\n  \"diagnostics\": [],\n  \"warnings\": [],\n  \"recovery\": {\n    \"rollback_supported\": false,\n    \"automatic_retry_allowed\": false,\n    \"next_actions\": []\n  }\n}",
+      "code": "UNSUPPORTED_CAPABILITY"
+    },
+    {
+      "tool": "catia_create_sketch",
+      "args": {
+        "plane": "xy"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.07,
+      "note": "",
+      "output": "Sketch 'Sketch.2' created on XY (front) plane. Ready for geometry."
+    },
+    {
+      "tool": "catia_sketch_circle",
+      "args": {
+        "cx": 20,
+        "cy": 0,
+        "radius": 4
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.02,
+      "note": "",
+      "output": "Circle created at (20, 0) with radius 4 mm"
+    },
+    {
+      "tool": "catia_close_sketch",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.03,
+      "note": "",
+      "output": "Sketch 'Sketch.2' closed. You can now apply Part Design features (pad, pocket, user pattern on its points, etc.)."
+    },
+    {
+      "tool": "catia_pocket",
+      "args": {
+        "depth": 20
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.34,
+      "note": "material removed",
+      "output": "Pocket 'Pocket.1' created: 20 mm deep. Removed 1005.3 mm3 (240000.0 -> 238994.7)."
+    },
+    {
+      "tool": "catia_circ_pattern",
+      "args": {
+        "count": 4,
+        "feature_name": "Pocket.1"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.67,
+      "note": "",
+      "output": "Circular pattern 'CircPattern.1' created: 4 instances, 90.0 deg spacing around the Z axis through [0.0, 0.0, 0.0]. Axis line 'Line.1' kept in geometrical set 'MCP_Construction'. Volume 238994.7 -> 235978.8 mm3."
+    },
+    {
+      "tool": "catia_fillet",
+      "args": {
+        "radius": 2,
+        "edge_name": "Edge.1"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.62,
+      "note": "",
+      "output": "Fillet created: R2 mm on Edge.1. Feature: 'EdgeFillet.1'"
+    },
+    {
+      "tool": "catia_list_features",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.04,
+      "note": "",
+      "output": "[\n  {\n    \"index\": 1,\n    \"name\": \"Pad.1\",\n    \"type\": \"unknown\"\n  },\n  {\n    \"index\": 2,\n    \"name\": \"Pocket.1\",\n    \"type\": \"unknown\"\n  },\n  {\n    \"index\": 3,\n    \"name\": \"CircPattern.1\",\n    \"type\": \"unknown\"\n  },\n  {\n    \"index\": 4,\n    \"name\": \"EdgeFillet.1\",\n    \"type\": \"unknown\"\n  }\n]"
+    },
+    {
+      "tool": "catia_add_body",
+      "args": {
+        "name": "Boss"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.1,
+      "note": "",
+      "output": "Body 'Boss' added and set as the active body: new sketches and features go into it."
+    },
+    {
+      "tool": "catia_create_sketch",
+      "args": {
+        "plane": "zx"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.13,
+      "note": "",
+      "output": "Sketch 'Sketch.3' created on ZX (top) plane. Ready for geometry."
+    },
+    {
+      "tool": "catia_sketch_circle",
+      "args": {
+        "cx": 30,
+        "cy": 20,
+        "radius": 5
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.01,
+      "note": "",
+      "output": "Circle created at (30, 20) with radius 5 mm"
+    },
+    {
+      "tool": "catia_close_sketch",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.03,
+      "note": "",
+      "output": "Sketch 'Sketch.3' closed. You can now apply Part Design features (pad, pocket, user pattern on its points, etc.)."
+    },
+    {
+      "tool": "catia_pad",
+      "args": {
+        "height": 10
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.13,
+      "note": "",
+      "output": "Pad created: 10 mm (normal). Feature: 'Pad.2'"
+    },
+    {
+      "tool": "catia_set_active_body",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.04,
+      "note": "",
+      "output": "Active body: 'PartBody'."
+    },
+    {
+      "tool": "catia_boolean",
+      "args": {
+        "operation": "add",
+        "body_name": "Boss"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.19,
+      "note": "",
+      "output": "Boolean add 'Add.1': 'Boss' into 'PartBody'. Target volume 235997.9 -> 235997.9 mm3."
+    },
+    {
+      "tool": "catia_gsd_create_geoset",
+      "args": {
+        "name": "Smoke_GSD"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.05,
+      "note": "",
+      "output": "Geometrical set 'Smoke_GSD' created and set as active."
+    },
+    {
+      "tool": "catia_gsd_point",
+      "args": {
+        "x": 0,
+        "y": 0,
+        "z": 60,
+        "name": "P1"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.53,
+      "note": "",
+      "output": "3D point created at (0, 0, 60) mm. Element: 'P1' in geometrical set 'Smoke_GSD'"
+    },
+    {
+      "tool": "catia_gsd_point",
+      "args": {
+        "x": 50,
+        "y": 0,
+        "z": 60,
+        "name": "P2"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.13,
+      "note": "",
+      "output": "3D point created at (50, 0, 60) mm. Element: 'P2' in geometrical set 'Smoke_GSD'"
+    },
+    {
+      "tool": "catia_gsd_line",
+      "args": {
+        "point1": "P1",
+        "point2": "P2",
+        "name": "L1"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.45,
+      "note": "",
+      "output": "3D line created between two points. Element: 'L1' in geometrical set 'Smoke_GSD'"
+    },
+    {
+      "tool": "catia_gsd_point_on_curve",
+      "args": {
+        "curve": "L1",
+        "ratio": 0.5,
+        "name": "Mid"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.15,
+      "note": "",
+      "output": "Point created on 'L1' at 50% of its length. Element: 'Mid' in geometrical set 'Smoke_GSD'"
+    },
+    {
+      "tool": "catia_gsd_plane_offset",
+      "args": {
+        "base_plane": "xy",
+        "offset": 70,
+        "name": "Top70"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.14,
+      "note": "",
+      "output": "Offset plane created: 70 mm from 'xy'. Element: 'Top70' in geometrical set 'Smoke_GSD'"
+    },
+    {
+      "tool": "catia_gsd_list_elements",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.1,
+      "note": "",
+      "output": "{\n  \"active_geoset\": \"Smoke_GSD\",\n  \"geometrical_sets\": [\n    {\n      \"name\": \"MCP_Construction\",\n      \"elements\": [\n        \"Point.1\",\n        \"Point.2\",\n        \"Line.1\"\n      ],\n      \"sketches\": []\n    },\n    {\n      \"name\": \"Smoke_GSD\",\n      \"elements\": [\n        \"P1\",\n        \"P2\",\n        \"L1\",\n        \"Mid\",\n        \"Top70\"\n      ],\n      \"sketches\": []\n    }\n  ],\n  \"body_sketches\": [\n    {\n      \"body\": \"PartBody\",\n      \"sketch\": \"Sketch.1\"\n    },\n    {\n      \"body\": \"PartBody\",\n      \"sketch\": \"Sketch.2\"\n    },\n    {\n      \"body\": \"Boss\",\n      \"sketch\": \"Sketch.3\"\n    }\n  ]\n}"
+    },
+    {
+      "tool": "catia_create_parameter",
+      "args": {
+        "name": "SmokeThickness",
+        "type": "length",
+        "value": 5
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.06,
+      "note": "",
+      "output": "Parameter 'MCP_Smoke_20261013_155152\\SmokeThickness' (length) created with value 5mm."
+    },
+    {
+      "tool": "catia_get_parameters",
+      "args": {
+        "filter": "SmokeThickness"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.19,
+      "note": "",
+      "output": "[\n  {\n    \"name\": \"MCP_Smoke_20261013_155152\\\\SmokeThickness\",\n    \"value\": 5.0,\n    \"comment\": \"\"\n  }\n]"
+    },
+    {
+      "tool": "catia_set_view",
+      "args": {
+        "view": "isometric"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.02,
+      "note": "",
+      "output": "View set to: isometric"
+    },
+    {
+      "tool": "catia_fit_all",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.02,
+      "note": "",
+      "output": "View fitted to all geometry"
+    },
+    {
+      "tool": "catia_screenshot",
+      "args": {
+        "file_path": "C:\\Users\\CALEIG~1.STR\\AppData\\Local\\Temp\\mcp_smoke_20261013_155152.jpg"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.44,
+      "note": "",
+      "output": "Screenshot saved to C:\\Users\\CALEIG~1.STR\\AppData\\Local\\Temp\\mcp_smoke_20261013_155152.jpg (1920x1080)"
+    },
+    {
+      "tool": "catia_export",
+      "args": {
+        "file_path": "C:\\Users\\CALEIG~1.STR\\AppData\\Local\\Temp\\mcp_smoke_20261013_155152.stp"
+      },
+      "ok": false,
+      "status": "FAIL",
+      "seconds": 0.14,
+      "note": "",
+      "output": "{\n  \"ok\": false,\n  \"code\": \"COM_ERROR\",\n  \"operation_id\": \"527570d8bd92402399b8b50d5d83dff8\",\n  \"tool\": \"catia_export\",\n  \"message\": \"(-2147352567, 'Exception occurred.', (0, 'CATIAPartDocument', 'The method ExportData failed', None, 0, -2147467259), None)\",\n  \"data\": {\n    \"failure_stage\": \"execute\"\n  },\n  \"effects\": {\n    \"modified\": null\n  },\n  \"diagnostics\": [],\n  \"warnings\": [],\n  \"recovery\": {\n    \"rollback_supported\": false,\n    \"automatic_retry_allowed\": false,\n    \"next_actions\": [\n      \"Inspect the CATIA model before retrying; model changes were not verified\"\n    ]\n  }\n}",
+      "code": "COM_ERROR"
+    },
+    {
+      "tool": "catia_inspect_api",
+      "args": {
+        "path": "part.ShapeFactory",
+        "filter": "AddNewPad"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.09,
+      "note": "",
+      "output": "{\n  \"path\": \"part.ShapeFactory\",\n  \"platform\": \"CATIA 3DEXPERIENCE\",\n  \"type\": \"ShapeFactory\",\n  \"members\": [\n    {\n      \"name\": \"AddNewPad\",\n      \"kind\": \"method\",\n      \"params\": [\n        {\n          \"name\": \"iSketch\",\n          \"type\": \"object\",\n          \"out\": false,\n          \"optional\": false\n        },\n        {\n          \"name\": \"iHeight\",\n          \"type\": \"double\",\n          \"out\": false,\n          \"optional\": false\n        }\n      ]\n    },\n    {\n      \"name\": \"AddNewPadFromRef\",\n      \"kind\": \"method\",\n      \"params\": [\n        {\n          \"name\": \"iProfileElt\",\n          \"type\": \"object\",\n          \"out\": false,\n          \"optional\": false\n        },\n        {\n          \"name\": \"iHeight\",\n          \"type\": \"double\",\n          \"out\": false,\n          \"optional\": false\n        }\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "tool": "catia_get_plm_attributes",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.02,
+      "note": "",
+      "output": "{\n  \"attributes\": {\n    \"V_Name\": \"MCP_Smoke_20261013_155152\",\n    \"PLM_ExternalID\": \"3sh-OI000045741-00565979\",\n    \"originated\": \"12/31/1969 5:00:00 PM\",\n    \"modified\": \"12/31/1969 5:00:00 PM\",\n    \"V_discipline\": \"Design\",\n    \"V_usage\": \"3DShape\"\n  },\n  \"unavailable\": [\n    \"revision\",\n    \"V_description\",\n    \"current\",\n    \"owner\",\n    \"project\",\n    \"organization\"\n  ]\n}"
+    },
+    {
+      "tool": "catia_inspect_api",
+      "args": {
+        "path": "editor.GetService(\"MeasurableService\")"
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.01,
+      "note": "",
+      "output": "{\n  \"path\": \"editor.GetService(\\\"MeasurableService\\\")\",\n  \"platform\": \"CATIA 3DEXPERIENCE\",\n  \"type\": \"MeasurableService\",\n  \"members\": [\n    {\n      \"name\": \"Application\",\n      \"kind\": \"property\",\n      \"readable\": true,\n      \"writable\": false\n    },\n    {\n      \"name\": \"Name\",\n      \"kind\": \"property\",\n      \"readable\": true,\n      \"writable\": true\n    },\n    {\n      \"name\": \"Parent\",\n      \"kind\": \"property\",\n      \"readable\": true,\n      \"writable\": false\n    },\n    {\n      \"name\": \"GetItem\",\n      \"kind\": \"method\",\n      \"params\": [\n        {\n          \"name\": \"IDName\",\n          \"type\": \"string\",\n          \"out\": false,\n          \"optional\": false\n        }\n      ]\n    },\n    {\n      \"name\": \"GetMeasurable\",\n      \"kind\": \"method\",\n      \"params\": [\n        {\n          \"name\": \"iMeasuredItem\",\n          \"type\": \"object\",\n          \"out\": false,\n          \"optional\": false\n        },\n        {\n          \"name\": \"iType\",\n          \"type\": \"int\",\n          \"out\": false,\n          \"optional\": false\n        }\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "tool": "catia_get_active_document_info",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.15,
+      "note": "",
+      "output": "{\n  \"platform\": \"3DEXPERIENCE\",\n  \"type\": \"part\",\n  \"title\": \"MCP_Smoke_20261013_155152\",\n  \"plm_attributes\": {\n    \"V_Name\": \"MCP_Smoke_20261013_155152\",\n    \"PLM_ExternalID\": \"3sh-OI000045741-00565979\",\n    \"originated\": \"12/31/1969 5:00:00 PM\",\n    \"modified\": \"12/31/1969 5:00:00 PM\",\n    \"V_discipline\": \"Design\",\n    \"V_usage\": \"3DShape\"\n  },\n  \"part_name\": \"MCP_Smoke_20261013_155152\",\n  \"bodies\": [\n    {\n      \"name\": \"PartBody\",\n      \"features\": [\n        \"Pad.1\",\n        \"Pocket.1\",\n        \"CircPattern.1\",\n        \"EdgeFillet.1\",\n        \"Add.1\"\n      ]\n    },\n    {\n      \"name\": \"Boss\",\n      \"features\": [\n        \"Pad.2\"\n      ]\n    }\n  ],\n  \"active_body\": \"PartBody\",\n  \"geometrical_sets\": [\n    \"MCP_Construction\",\n    \"Smoke_GSD\"\n  ],\n  \"parameters_count\": 72\n}"
+    },
+    {
+      "tool": "catia_new_drawing",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 2.84,
+      "note": "",
+      "output": "Drawing created in the session: 'Drawing00043912' (active sheet 'Sheet.1'). Use catia_drawing_add_view to project a 3D part open in another editor; save with catia_save_document."
+    },
+    {
+      "tool": "catia_drawing_add_view",
+      "args": {
+        "plane": "xy",
+        "part_name": "MCP_Smoke_20261013_155152"
+      },
+      "ok": false,
+      "status": "FAIL",
+      "seconds": 0.25,
+      "note": "",
+      "output": "{\n  \"ok\": false,\n  \"code\": \"UNSUPPORTED_CAPABILITY\",\n  \"operation_id\": \"6cc196f6404c40cdbe8427a6d954d810\",\n  \"tool\": \"catia_drawing_add_view\",\n  \"message\": \"Cannot bind parameter 'iListofPrdInst' (array) of DefineFrontView(iXPos: double, iYpos: double, iListofPrdInst: array, iPlane: array, iViewStyle: string, iComputeUpdate: bool, iViewProp: object): the signature differs from what this tool knows how to fill. Create the view in the UI, or script it with catia_run_script using this signature.\",\n  \"data\": {\n    \"failure_stage\": \"execute\"\n  },\n  \"effects\": {\n    \"modified\": false\n  },\n  \"diagnostics\": [],\n  \"warnings\": [],\n  \"recovery\": {\n    \"rollback_supported\": false,\n    \"automatic_retry_allowed\": false,\n    \"next_actions\": []\n  }\n}",
+      "code": "UNSUPPORTED_CAPABILITY"
+    },
+    {
+      "tool": "catia_drawing_projection_view",
+      "args": {
+        "direction": "right"
+      },
+      "ok": false,
+      "status": "FAIL",
+      "seconds": 0.03,
+      "note": "",
+      "output": "{\n  \"ok\": false,\n  \"code\": \"COM_ERROR\",\n  \"operation_id\": \"a220942fc6914af3bf0ecd76e36bd965\",\n  \"tool\": \"catia_drawing_projection_view\",\n  \"message\": \"The active sheet has no user view yet (only Main/Background). Add one with catia_drawing_add_view.\",\n  \"data\": {\n    \"failure_stage\": \"execute\"\n  },\n  \"effects\": {\n    \"modified\": null\n  },\n  \"diagnostics\": [],\n  \"warnings\": [],\n  \"recovery\": {\n    \"rollback_supported\": false,\n    \"automatic_retry_allowed\": false,\n    \"next_actions\": [\n      \"Inspect the CATIA model before retrying; model changes were not verified\"\n    ]\n  }\n}",
+      "code": "COM_ERROR"
+    },
+    {
+      "tool": "catia_drawing_add_text",
+      "args": {
+        "text": "MCP smoke test",
+        "x": 20,
+        "y": 20
+      },
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.3,
+      "note": "",
+      "output": "Text 'Text 1' added to view 'View.2' at (20, 20) mm."
+    },
+    {
+      "tool": "catia_drawing_list_views",
+      "args": {},
+      "ok": true,
+      "status": "PASS",
+      "seconds": 0.05,
+      "note": "",
+      "output": "{\n  \"sheets\": [\n    {\n      \"name\": \"Sheet.1\",\n      \"active\": true,\n      \"views\": [\n        {\n          \"index\": 1,\n          \"name\": \"View.1\",\n          \"x\": 0.0,\n          \"y\": 0.0,\n          \"scale\": 1.0,\n          \"generative\": false\n        },\n        {\n          \"index\": 2,\n          \"name\": \"View.2\",\n          \"x\": 0.0,\n          \"y\": 0.0,\n          \"scale\": 1.0,\n          \"generative\": false\n        }\n      ]\n    }\n  ]\n}"
+    }
+  ]
+}
