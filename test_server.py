@@ -22,6 +22,7 @@ def test_imports():
     from catia_mcp.tools.knowledge import KnowledgeTools
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
+    from catia_mcp.tools.kinematics import KinematicsTools
     from catia_mcp.tools.export import ExportTools
     print("  All modules imported successfully")
 
@@ -39,6 +40,7 @@ def test_tool_definitions():
     from catia_mcp.tools.knowledge import KnowledgeTools
     from catia_mcp.tools.assembly import AssemblyTools
     from catia_mcp.tools.measurement import MeasurementTools
+    from catia_mcp.tools.kinematics import KinematicsTools
     from catia_mcp.tools.export import ExportTools
 
     conn = CATIAConnection()
@@ -52,6 +54,7 @@ def test_tool_definitions():
         "Diagnostics": DiagnosticsTools(conn),
         "Assembly": AssemblyTools(conn),
         "Measurement": MeasurementTools(conn),
+        "Kinematics": KinematicsTools(conn),
         "Export": ExportTools(conn),
     }
 
