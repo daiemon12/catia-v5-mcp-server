@@ -243,6 +243,14 @@ reached through a private network such as Tailscale or an SSH tunnel, never
 the open internet. Full setup and client configurations:
 [docs/remote-access.md](docs/remote-access.md).
 
+### Read-only mode
+
+For evaluations, audits or data extraction, start the server with
+`--read-only` (or `CATIA_MCP_READ_ONLY=1`). Only inspection and measurement
+tools are exposed: documents can be opened and read, nothing can be created,
+modified, saved or exported. See [SECURITY.md](SECURITY.md) for the network
+behaviour, data flows and the hash-pinned dependency lock file.
+
 ### 4. Start CATIA V5
 
 Make sure CATIA V5 is running before asking your agent to interact with it. The server will automatically connect to the running instance.

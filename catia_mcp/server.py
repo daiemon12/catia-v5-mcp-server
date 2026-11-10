@@ -70,8 +70,37 @@ def failure(
     )
 
 
+# Tools exposed in read-only mode: they inspect and measure, and never create,
+# modify, save or export anything. catia_open_document is included because
+# reading a model requires opening it; closing and saving are not.
+READ_ONLY_TOOLS = frozenset(
+    {
+        "catia_connect",
+        "catia_disconnect",
+        "catia_diagnose",
+        "catia_open_document",
+        "catia_list_documents",
+        "catia_get_active_document_info",
+        "catia_get_parameters",
+        "catia_get_inertia",
+        "catia_get_bounding_box",
+        "catia_measure_distance",
+        "catia_list_features",
+        "catia_list_faces",
+        "catia_list_edges",
+        "catia_list_relations",
+        "catia_list_components",
+        "catia_list_constraints",
+        "catia_gsd_list_elements",
+        "catia_sketch_get_geometry",
+        "catia_drawing_list_view_geometry",
+    }
+)
+
+
 class CATIAMCPServer:
-    def __init__(self) -> None:
+    def __init__(self, read_only: bool = False) -> None:
+        self.read_only = read_only
         self.server = Server("catia-v5-mcp")
         self.connection = CATIAConnection()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="catia-sta")
@@ -104,6 +133,8 @@ class CATIAMCPServer:
                 name = definition["name"]
                 if name in self._tool_router:
                     raise ValueError(f"Duplicate tool: {name}")
+                if read_only and name not in READ_ONLY_TOOLS:
+                    continue
                 self._tool_router[name] = module
                 self._schemas[name] = definition["inputSchema"]
         self._setup_handlers()
@@ -115,6 +146,7 @@ class CATIAMCPServer:
                 Tool(**definition)
                 for module in self._tool_modules
                 for definition in module.get_tool_definitions()
+                if definition["name"] in self._tool_router
             ]
 
         @self.server.call_tool(validate_input=False)
@@ -136,6 +168,15 @@ class CATIAMCPServer:
     def _execute_tool(self, name: str, arguments: dict[str, Any]) -> CallToolResult:
         module = self._tool_router.get(name)
         if module is None:
+            if self.read_only:
+                return failure(
+                    "READ_ONLY_MODE",
+                    f"Tool '{name}' is not available: the server runs in read-only mode "
+                    "and only exposes inspection and measurement tools.",
+                    "validate",
+                    False,
+                    name,
+                )
             return failure("UNKNOWN_TOOL", f"Unknown tool: {name}", "validate", False, name)
         try:
             validate(arguments, self._schemas[name])
@@ -177,7 +218,11 @@ class CATIAMCPServer:
             self._executor.shutdown(wait=True)
 
     async def run(self) -> None:
-        logger.info("Starting CATIA V5 MCP Server: %d tools", len(self._tool_router))
+        logger.info(
+            "Starting CATIA V5 MCP Server: %d tools%s",
+            len(self._tool_router),
+            " (READ-ONLY mode)" if self.read_only else "",
+        )
         try:
             async with stdio_server() as (read_stream, write_stream):
                 await self.server.run(
@@ -220,6 +265,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--new-token", action="store_true", help="Print a fresh random token and exit"
     )
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        default=os.environ.get("CATIA_MCP_READ_ONLY", "").strip().lower() in {"1", "true", "yes", "on"},
+        help="Expose only inspection and measurement tools; nothing can be created, "
+        "modified, saved or exported (also: CATIA_MCP_READ_ONLY=1)",
+    )
     return parser.parse_args(argv)
 
 
@@ -234,9 +286,9 @@ def main(argv: list[str] | None = None) -> None:
         from catia_mcp.http_transport import check_bind
 
         check_bind(args.host, args.token)
-        asyncio.run(CATIAMCPServer().run_http(args.host, args.port, args.token))
+        asyncio.run(CATIAMCPServer(args.read_only).run_http(args.host, args.port, args.token))
         return
-    asyncio.run(CATIAMCPServer().run())
+    asyncio.run(CATIAMCPServer(args.read_only).run())
 
 
 if __name__ == "__main__":

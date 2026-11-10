@@ -45,6 +45,13 @@ All notable changes to this project are documented here.
   dialog; if CATIA cannot recover, terminate CNEXT and restart the MCP process.
 
 ### Added
+- **Read-only mode** (`--read-only` or `CATIA_MCP_READ_ONLY=1`): exposes
+  only the 19 inspection and measurement tools; every other tool is hidden
+  and refused with `READ_ONLY_MODE`. Meant for evaluations, audits and data
+  extraction on models that must not change.
+- `SECURITY.md` describing network behaviour, data flows, files written and
+  the trust model, and `requirements-lock.txt`, the Windows dependency set
+  pinned with SHA-256 hashes.
 - **Remote access over Streamable HTTP**: `catia-mcp --http` serves the tools
   at `/mcp` so the agent can run on a Mac or another machine while CATIA runs
   on a Windows PC or a cloud workstation. Loopback-only by default; binding
