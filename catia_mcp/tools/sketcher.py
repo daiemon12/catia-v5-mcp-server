@@ -366,11 +366,16 @@ class SketcherTools:
         self._ensure_sketch_open()
         factory = self._active_factory
 
-        # Create 4 lines forming a closed rectangle
-        factory.CreateLine(x1, y1, x2, y1)  # bottom
-        factory.CreateLine(x2, y1, x2, y2)  # right
-        factory.CreateLine(x2, y2, x1, y2)  # top
-        factory.CreateLine(x1, y2, x1, y1)  # left
+        # Create a single closed rectangular profile using CreateClosedByPoints
+        # Points order: bottom-left → bottom-right → top-right → top-left
+        closed_rect = factory.CreateClosedByPoints(
+            [
+                [x1, y1],
+                [x2, y1],
+                [x2, y2],
+                [x1, y2],
+            ]
+        )
 
         return (
             f"Rectangle created from ({x1}, {y1}) to ({x2}, {y2}) mm "
