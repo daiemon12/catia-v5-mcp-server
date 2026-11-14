@@ -25,6 +25,7 @@ from catia_mcp.tools.drawing import DraftingTools
 from catia_mcp.tools.export import ExportTools
 from catia_mcp.tools.gsd import GSDTools
 from catia_mcp.tools.knowledge import KnowledgeTools
+from catia_mcp.tools.kinematics import KinematicsTools
 from catia_mcp.tools.measurement import MeasurementTools
 from catia_mcp.tools.part_design import PartDesignTools
 from catia_mcp.tools.sketcher import SketcherTools
@@ -82,6 +83,7 @@ class CATIAMCPServer:
         self.diagnostics_tools = DiagnosticsTools(self.connection)
         self.drafting_tools = DraftingTools(self.connection)
         self.knowledge_tools = KnowledgeTools(self.connection)
+        self.kinematics_tools = KinematicsTools(self.connection)
         self.assembly_tools = AssemblyTools(self.connection)
         self.measurement_tools = MeasurementTools(self.connection)
         self.export_tools = ExportTools(self.connection)
@@ -93,6 +95,7 @@ class CATIAMCPServer:
             self.diagnostics_tools,
             self.drafting_tools,
             self.knowledge_tools,
+            self.kinematics_tools,
             self.assembly_tools,
             self.measurement_tools,
             self.export_tools,

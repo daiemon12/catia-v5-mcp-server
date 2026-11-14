@@ -283,7 +283,8 @@ class KinematicsTools:
             mechs = root.GetTechnologicalObject("Mechanisms")
         except Exception as e:
             raise RuntimeError(
-                f"Cannot access Mechanisms of the active assembly: {_com_desc(e)}"
+                f"Cannot access Mechanisms of the active assembly: {_com_desc(e)}. "
+                "The DMU Kinematics license may be missing or not activated."
             ) from e
         try:
             count = mechs.Count
