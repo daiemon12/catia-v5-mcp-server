@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- **DMU Kinematics module** — four tools to create revolute and prismatic joints,
+  inspect mechanisms, and drive a single-command mechanism. Requires the CATIA
+  V5 DMU Kinematics license. Joint axes must be standalone wireframe geometry in
+  geometrical sets in both parts (same element path); sketch elements are not
+  supported. The drive tool requires exactly one command per mechanism.
+
 ### Fixed
 - Part Design, field evidence on V5-6R2020 (B30), signatures checked against
   the B30 type libraries:
@@ -73,8 +80,8 @@ All notable changes to this project are documented here.
   (from PR #2's proposal).
 - **Dimensioning generative views the way CATIA actually allows it** (87
   tools total). A V5R20 live lab established that generated projection
-  curves are never exposed to Automation (GeometricElements shows only
-  the axis and manual 2D items), so `catia_drawing_generate_dimensions`
+  curves are never exposed to Automation (GeometricElements shows only the
+  axis and manual 2D items), so `catia_drawing_generate_dimensions`
   implements the proven route: one associative dimension per supported 3D
   sketch constraint via DrawingSheet.GenerateDimensions, with the drawing
   activated first (otherwise CATIA silently does nothing) and a dimension
@@ -153,21 +160,20 @@ All notable changes to this project are documented here.
   Face.N/Edge.N references and honor their schema arguments (previously
   silently ignored); shell anchors on the face to remove per the
   documented 3-parameter signature; rectangular and circular patterns use
-  the full 12-parameter signatures (they failed with
-  DISP_E_BADPARAMCOUNT on every call, and circular counts now go in the
-  angular slot); holes use AddNewHoleFromSketch, set Diameter.Value
-  correctly and honor the type argument; mirror drops its dead
-  feature_name argument. Center of gravity and the inertia matrix are
-  now computed through SystemService.Evaluate because in/out safearrays
-  do not marshal through late-bound COM (previous COG output was the
-  caller's unmodified zeros), with inertia data from the SPAWorkbench
-  Inertia object (Measurable.GetInertia does not exist); mass from the
-  CATIA material is reported. The bounding box is computed from a vertex
-  sweep (Measurable.GetBoundingBox does not exist in any V5 release) and
-  states its exactness. Pocket honors an explicitly requested direction
-  instead of silently flipping it. Arc sweeps crossing 0 degrees are
-  normalized. HSO selection and sketch state are cleaned up on all error
-  paths.
+  the full 12-parameter signatures (they failed with DISP_E_BADPARAMCOUNT on
+  every call, and circular counts now go in the angular slot); holes use
+  AddNewHoleFromSketch, set Diameter.Value correctly and honor the type
+  argument; mirror drops its dead feature_name argument. Center of gravity
+  and the inertia matrix are now computed through SystemService.Evaluate
+  because in/out safearrays do not marshal through late-bound COM (previous
+  COG output was the caller's unmodified zeros), with inertia data from the
+  SPAWorkbench Inertia object (Measurable.GetInertia does not exist in any
+  V5 release); mass from the CATIA material is reported. The bounding box
+  is computed from a vertex sweep (Measurable.GetBoundingBox does not exist
+  in any V5 release) and states its exactness. Pocket honors an explicitly
+  requested direction instead of silently flipping it. Arc sweeps crossing
+  0 degrees are normalized. HSO selection and sketch state are cleaned up
+  on all error paths.
 - **`catia_measure_distance` can now target faces and edges**: topology
   resolves via the final shape's HSO enumeration and the selection's
   Reference property (`CreateReferenceFromObject` rejects HSO topology
@@ -183,9 +189,9 @@ All notable changes to this project are documented here.
 - **`catia_pocket` could report success while removing no material**: the cut
   side was never established. Orientation is now set explicitly, the body
   volume is measured before/after, the direction is flipped automatically
-  when nothing was removed, and the result message states the measured
-  effect (or FEATURE_NO_EFFECT honestly). Field-validated: 10x10x5 pocket
-  removes exactly 500 mm3.
+  when nothing was removed, and the result message states the measured effect
+  (or FEATURE_NO_EFFECT honestly). Field-validated: 10x10x5 pocket removes
+  exactly 500 mm3.
 - **`catia_close_sketch` lost track of open sketches across server
   restarts**: it now re-adopts the document's in-work sketch instead of
   failing while CATIA visibly holds a sketch open.
@@ -194,8 +200,8 @@ All notable changes to this project are documented here.
   on V5R20 identified a stale pywin32 `gen_py` cache as the most common
   cause (methods that exist stop resolving); the error message, the
   diagnostics notes and a new Troubleshooting entry now point to clearing
-  it first. V5R20 is confirmed running the full core workflow (part,
-  sketch, pad) once the cache is cleared.
+  it first. V5R20 is confirmed running the full core workflow (part, sketch,
+  pad) once the cache is cleared.
 - Measurement tools obtain SPAWorkbench from the active document first:
   `GetWorkbench` is a Document method in the V5 automation model, not an
   Application method.
