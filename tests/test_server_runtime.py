@@ -15,8 +15,8 @@ from catia_mcp.server import CATIAMCPServer
 
 def test_registered_tools_and_schemas_are_unchanged():
     server = CATIAMCPServer()
-    assert len(server._tool_router) == 98
-    assert not any(name.startswith("catia_caa") for name in server._tool_router)
+    assert len(server._tool_router) == 99
+    assert "catia_caa_demo_create_point" in server._tool_router
     for schema in server._schemas.values():
         Draft202012Validator.check_schema(schema)
     asyncio.run(server.close())

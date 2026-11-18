@@ -1,0 +1,36 @@
+{
+  "method": "catia_caa_demo_create_point",
+  "files": {
+    "CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/Imakefile.mk": "4703d9653bf037d190e1783db92408815feadb15627c37a59cd9e171cea3f06c",
+    "CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/LocalInterfaces/CatiaPyBridgeAddin.h": "2ac0cb2486c267aba6811fc0481711d35c7207ae5acd96ed728eefbf30fcdff5",
+    "CatiaPyBridgeFramework/CatiaPyBridgeAddin.m/src/CatiaPyBridgeAddin.cpp": "393f7b4dfba3a53046f2688fd955f26a1005b36b362dd3ceac4c6398e08980c1",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/Imakefile.mk": "b08bafbe232f177d01e5ffb637988fa9328f20b33f45171f6320ee3b723cfc6f",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeCore.h": "02df5d925c37eabf4967a7eaf148ee9eab6c6fedda4437063928fdcb2a391388",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeFileBridge.h": "2b414059c16eabfb72a853d2a1643c1a780cfda7802f7f9868477cb62ebf2b76",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeJson.h": "58ebc9aa4b22281b31f97c32642f0deb4c72fff3a6970ff28744285a94d434c0",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeLogger.h": "dac4167554c7b743345670e4313b92bbfd0321f2a11c0bfdf9582a7324e8ba16",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgePointDemo.h": "fcb6d7ddd0c96c2b1feae752c970bfdc675c0c2602a4dcbb7204f53f92b1a796",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeRequest.h": "bb5eb00bb7e5bd48ca697dc9fb645f96aa3fd16b171d10284f88e066cbcbe3f4",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeResponse.h": "37c2bbf648dc4bf1fb395ddb9c87a1c4fd7f9903644f54f1a95d345ecdae34f4",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/LocalInterfaces/CatiaPyBridgeRunOnceCommand.h": "3ca3e3a0e4c6997ce19e80dd445921e2dae01b3679910cc4ae71f086e558b8d3",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeCore.cpp": "ca62f8b5dd55a561f00e183b38717dede9da045c8c3a28b919cdecabc6b955a9",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeFileBridge.cpp": "71dc44e05c683292c236c61e5fa819fc8be8043fe400f6a711eaab0aa933a84d",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeJson.cpp": "5edf10ad656079914c5b9a839b2c98e4bbfc7ec91dbb4301b3e1557eef900a83",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeLogger.cpp": "fd8c3eed8828d4239b5e5b7a8d41a3bfec371cb88ec331f3cce22f07e4d6667b",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgePointDemo.cpp": "e606b88c2301232a2603ef219445f620f4ee254f5826406d6ef9c2e0bcf35624",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeRequest.cpp": "09db552ed2f3ca9af5efcab8ba239c9040cf5c4621e740d946a38cbff1380de4",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeResponse.cpp": "8640a4e8e3835578a5ad85a5c649d3365fe2256adc8cac7549e6747d2e426cd2",
+    "CatiaPyBridgeFramework/CatiaPyBridgeCmdModule.m/src/CatiaPyBridgeRunOnceCommand.cpp": "0342bc1679064d2276027e89415487faca4d04133a3f620522813ca24f63e9e1",
+    "CatiaPyBridgeFramework/CNext/resources/msgcatalog/CatiaPyBridgeAddin.CATNls": "bc40e0225c2c25dcc3c47ffea9d7a2ebc066a4defdf20fbf823535cc67e6667b",
+    "CatiaPyBridgeFramework/CNext/resources/msgcatalog/CatiaPyBridgeCommandHeader.CATNls": "b54ee830030cee88fadce8bf4585b1a3da154d7b521c928b5749179cd9d3470f",
+    "CatiaPyBridgeFramework/IdentityCard/IdentityCard.xml": "ed8d08c638cf3c7d9c9877f08b5b9fc1fde9cd7c378e96eb614d142f2d647432",
+    "CatiaPyBridgeFramework/various/DOC/framework.data": "354c967c080caff8df50c8d1e543b44a73e517740bd9cf55b3c07778eba5e39f",
+    "CatiaPyBridgeRuntime/code/dictionary/CatiaPyBridge.dico": "fb1dda787788c81b6cac640099f18d0db282b59b71b26be3a2ddeae5e5670e4e"
+  },
+  "original_point_source": {
+    "source_repository": "https://github.com/rancy777/CatiaPyBridge-CAA-COM-MCP",
+    "source_head": "214c4d90b2b3dad91317090aede42e9f8a09aa3d",
+    "source_dirty": true
+  },
+  "json_header_sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6"
+}

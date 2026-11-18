@@ -12,3 +12,18 @@ venv/
 # GSD smoke test outputs
 GSD_SmokeTest*.CATPart
 gsd_smoke_test.jpg
+
+# Local CAA configuration, vendor workspace files and generated artifacts
+caa/point_bridge/caa_workspace/CATIAV5Level.lvl
+caa/point_bridge/caa_workspace/Install_config_win_b64
+caa/point_bridge/caa_workspace/**/win_b64/
+caa/point_bridge/caa_workspace/**/Objects/
+caa/point_bridge/caa_workspace/**/LocalGenerated/
+caa/point_bridge/caa_workspace/CATEnv/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/code/bin/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/code/productIC/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/resources/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/runtime.json
+caa/point_bridge/env/
+caa/point_bridge/caa_workspace/CatiaPyBridgeRuntime/jobs/
+caa/point_bridge/caa_workspace/**/LocalInterfaces/nlohmann_json.h
