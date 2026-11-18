@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **98 tools** that let an AI agent:
+This MCP server exposes **101 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -23,21 +23,11 @@ This MCP server exposes **98 tools** that let an AI agent:
 - **Assembly** — add components, Fix/Coincidence/Offset/Angle constraints, move/rotate
 - **Measurement** — distance, inertia, bounding box, parameters
 - **Knowledgeware** — user parameters, formulas, design tables, relations
+- **Kinematics** — DMU revolute joints, mechanism inspection and driving (needs the DMU Kinematics license)
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
 - **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
 - **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
-
-## Kinematics Tools (4)
-
-The kinematics tools create and inspect DMU mechanisms in the active CATIA assembly. They require CATIA V5 with the **DMU Kinematics license** activated.
-
-| Tool | Purpose | Preconditions |
-|---|---|---|
-| `catia_kin_create_revolute_joint` | Create a revolute joint between two components. | Both parts must contain the same standalone wireframe axis line (for example, `KinGeo/Line.1`) in a geometrical set. The line must be normal to the selected origin plane. Sketch-embedded elements are not supported. |
-| `catia_kin_create_prismatic_joint` | Create a prismatic joint between two components. | Both parts must contain the same standalone wireframe translation line in a geometrical set (for example, `KinGeo/Line.1`), with a compatible plane reference. Sketch-embedded elements are not supported. |
-| `catia_kin_get_mechanism_info` | List mechanisms, joints, commands, degrees of freedom, and fixed part. | An assembly document with accessible DMU Kinematics mechanisms. |
-| `catia_kin_drive_mechanism` | Drive an existing mechanism command and return its read-back value. | The mechanism must contain exactly one command; the drive tool does not choose among multiple commands. |
 
 ## Requirements
 
@@ -68,7 +58,7 @@ The kinematics tools create and inspect DMU mechanisms in the active CATIA assem
 
 `catia_measure_distance` accepts tree names (`Pad.1`, `Sketch.2`) and indexed
 topology (`Face.N` / `Edge.N` from `catia_list_faces` / `catia_list_edges`).
-The topology path follows a V5R20 field diagnosis (Selection Reference
+The topology path follows a V5R20 field diagnosis (selection Reference
 property instead of `CreateReferenceFromObject`, which rejects HSO topology)
 and awaits live confirmation on real CATIA; reports welcome.
 
@@ -307,6 +297,7 @@ catia-v5-mcp-server/
 │       ├── measurement.py   # Measurement & analysis (6 tools)
 │       ├── drawing.py       # Drafting: drawings, views, dimensions, text & tables (11 tools)
 │       ├── knowledge.py     # Knowledgeware: parameters, formulas, design tables (5 tools)
+│       ├── kinematics.py    # DMU Kinematics: revolute joints, mechanisms (3 tools)
 │       ├── diagnostics.py   # Installation diagnostics (1 tool)
 │       └── export.py        # Export & view control (4 tools)
 ├── pyproject.toml
@@ -472,6 +463,18 @@ CATIA V5 Application
 | `catia_delete_relation` | Delete a relation by name |
 | `catia_create_design_table` | Create a design table from a sheet and associate parameters |
 
+### Kinematics Tools (3)
+
+Requires the **DMU Kinematics license**. Live-verified on V5-6R2020 (B30).
+
+| Tool | Purpose | Preconditions |
+|---|---|---|
+| `catia_kin_create_revolute_joint` | Create a revolute joint between two components, with an optional angle command | Both parts contain the same standalone wireframe axis line in a geometrical set (for example `KinGeo/Line.1`), normal to the chosen origin plane. Sketch-embedded elements are rejected by CATIA |
+| `catia_kin_get_mechanism_info` | List mechanisms, joints, commands, degrees of freedom and the fixed part | An assembly with DMU mechanisms. Read-only |
+| `catia_kin_drive_mechanism` | Drive the mechanism to an angle and return the read-back value | Exactly one command in the mechanism |
+
+![Mechanism driven to 90 degrees](docs/images/kinematics_assembly_90deg.png)
+
 ### Diagnostics (1)
 | Tool | Description |
 |------|-------------|
@@ -481,7 +484,7 @@ CATIA V5 Application
 
 ### Structured tool errors and cancellation
 
-Errors returned by the server boundary for all 98 tools now set MCP
+Errors returned by the server boundary for all tools now set MCP
 `isError=true` and include `structuredContent` with `ok=false`, `code`,
 `message`, `operation_id`, `tool`, `data`, `effects`, `diagnostics`, `warnings`
 and `recovery`. The text content contains the same JSON. Clients should inspect

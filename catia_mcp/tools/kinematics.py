@@ -30,6 +30,12 @@ ANGLE_CMD_TYPE = "CATKinAngleCmd"
 
 VALID_PLANES = ("xy plane", "yz plane", "zx plane")
 
+# Implemented but not exposed: on V5-6R2020 AddJoint rejects the prismatic
+# reference set on every plane orientation (live report in PR #15). The code
+# stays for whoever finds the working reference recipe; agents must not be
+# offered a tool that is known to fail.
+NOT_EXPOSED = frozenset({"catia_kin_create_prismatic_joint"})
+
 
 def _unwrap(ret: Any) -> Any:
     """pywin32 packs [out] params into tuples; the object is always element 0.
@@ -82,6 +88,10 @@ class KinematicsTools:
     # ── Tool definitions ──────────────────────────────────────────────
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
+        """Tools exposed to MCP clients (see NOT_EXPOSED)."""
+        return [d for d in self._all_tool_definitions() if d["name"] not in NOT_EXPOSED]
+
+    def _all_tool_definitions(self) -> list[dict[str, Any]]:
         return [
             {
                 "name": "catia_kin_create_revolute_joint",

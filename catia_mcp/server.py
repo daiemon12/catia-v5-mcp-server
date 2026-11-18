@@ -95,6 +95,7 @@ READ_ONLY_TOOLS = frozenset(
         "catia_gsd_list_elements",
         "catia_sketch_get_geometry",
         "catia_drawing_list_view_geometry",
+        "catia_kin_get_mechanism_info",
     }
 )
 
