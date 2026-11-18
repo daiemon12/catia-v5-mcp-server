@@ -14,7 +14,7 @@ The first open-source MCP server for CATIA V5. Drive parametric CAD modeling, me
 
 ## What it does
 
-This MCP server exposes **98 tools** that let an AI agent:
+This MCP server exposes **99 tools** that let an AI agent:
 
 - **Create and manage documents** — new Part, Product (assembly), open, save, close
 - **2D Sketching** — lines, rectangles, circles, arcs, splines, points, constraints
@@ -26,6 +26,7 @@ This MCP server exposes **98 tools** that let an AI agent:
 - **Export** — STEP, IGES, STL, 3DXML, VRML, screenshots
 - **View control** — set standard views, fit all, capture screenshots
 - **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
+- **Experimental CAA point** — one optional native parameterized coordinate-point adapter; source-only, no automatic CATIA launch. See [configuration and limitations](docs/caa-point.md).
 - **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
 
 ## Requirements
@@ -91,7 +92,7 @@ pip install -e .
 
 Or manually:
 ```bash
-pip install mcp pywin32
+pip install "mcp>=1.27.0,<2" pywin32 "jsonschema>=4.20,<5"
 ```
 
 ### 3. Connect your MCP client
@@ -286,6 +287,7 @@ catia-v5-mcp-server/
 │   ├── server.py            # MCP Server — tool registration & routing
 │   ├── connection.py        # COM connection manager (win32com)
 │   ├── http_transport.py    # Optional remote access (Streamable HTTP + token)
+│   ├── caa/                # Optional Point runtime protocol
 │   └── tools/
 │       ├── __init__.py
 │       ├── document.py      # Document management (9 tools)
@@ -297,7 +299,10 @@ catia-v5-mcp-server/
 │       ├── drawing.py       # Drafting: drawings, views, dimensions, text & tables (11 tools)
 │       ├── knowledge.py     # Knowledgeware: parameters, formulas, design tables (5 tools)
 │       ├── diagnostics.py   # Installation diagnostics (1 tool)
-│       └── export.py        # Export & view control (4 tools)
+│       ├── export.py        # Export & view control (4 tools)
+│       └── caa.py           # Experimental coordinate point (1 tool)
+├── caa/point_bridge/        # Native source and local build helpers
+├── docs/caa-point.md
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -461,6 +466,12 @@ CATIA V5 Application
 | `catia_delete_relation` | Delete a relation by name |
 | `catia_create_design_table` | Create a design table from a sheet and associate parameters |
 
+### Experimental CAA Point (1)
+
+| Tool | Description |
+| --- | --- |
+| `catia_caa_demo_create_point` | Preview/confirmed native parameterized coordinate point on one explicitly identified B30 instance; configured local runtime required |
+
 ### Diagnostics (1)
 | Tool | Description |
 |------|-------------|
@@ -470,7 +481,7 @@ CATIA V5 Application
 
 ### Structured tool errors and cancellation
 
-Errors returned by the server boundary for all 98 tools now set MCP
+Errors returned by the server boundary for registered tools now set MCP
 `isError=true` and include `structuredContent` with `ok=false`, `code`,
 `message`, `operation_id`, `tool`, `data`, `effects`, `diagnostics`, `warnings`
 and `recovery`. The text content contains the same JSON. Clients should inspect

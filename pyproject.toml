@@ -32,6 +32,10 @@ catia-mcp = "catia_mcp.server:main"
 [tool.setuptools.packages.find]
 include = ["catia_mcp*"]
 
+[tool.setuptools.package-data]
+catia_mcp = ["*.schema.json"]
+"catia_mcp.caa" = ["native-source.json", "LICENSE"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

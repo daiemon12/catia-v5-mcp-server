@@ -1,0 +1,4 @@
+BUILT_OBJECT_TYPE=SHARED LIBRARY
+LINK_WITH = JS0GROUP JS0FM DI0PANV2 CATApplicationFrame \
+CATObjectModelerBase CATObjectSpecsModeler CATInfInterfaces \
+CATMecModInterfaces CATMecModUseItf CATMecModLiveUseItf CATMechanicalModeler CATGitInterfaces KnowledgeItf

@@ -31,6 +31,12 @@ def test_read_only_server_lists_and_runs_only_read_tools(monkeypatch):
             assert refused.isError is True
             assert refused.structuredContent["code"] == "READ_ONLY_MODE"
             assert refused.structuredContent["effects"]["modified"] is False
+            for dry_run in (True, False):
+                refused = await server.call_tool(
+                    "catia_caa_demo_create_point", {"dry_run": dry_run}
+                )
+                assert refused.structuredContent["code"] == "READ_ONLY_MODE"
+                assert refused.structuredContent["effects"]["modified"] is False
             for name in ("catia_save_document", "catia_export", "catia_close_document"):
                 assert (await server.call_tool(name, {})).structuredContent["code"] == "READ_ONLY_MODE"
             allowed = await server.call_tool("catia_list_documents", {})

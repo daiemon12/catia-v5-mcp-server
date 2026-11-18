@@ -19,6 +19,7 @@ from mcp.types import CallToolResult, TextContent, Tool
 from catia_mcp.connection import CATIAConnection
 from catia_mcp.results import operation_result
 from catia_mcp.tools.assembly import AssemblyTools
+from catia_mcp.tools.caa import CaaTools
 from catia_mcp.tools.diagnostics import DiagnosticsTools
 from catia_mcp.tools.document import DocumentTools
 from catia_mcp.tools.drawing import DraftingTools
@@ -114,6 +115,7 @@ class CATIAMCPServer:
         self.assembly_tools = AssemblyTools(self.connection)
         self.measurement_tools = MeasurementTools(self.connection)
         self.export_tools = ExportTools(self.connection)
+        self.caa_tools = CaaTools(self.connection)
         self._tool_modules = [
             self.document_tools,
             self.sketcher_tools,
@@ -125,6 +127,7 @@ class CATIAMCPServer:
             self.assembly_tools,
             self.measurement_tools,
             self.export_tools,
+            self.caa_tools,
         ]
         self._tool_router: dict[str, Any] = {}
         self._schemas: dict[str, dict] = {}
@@ -182,10 +185,13 @@ class CATIAMCPServer:
             validate(arguments, self._schemas[name])
         except ValidationError as error:
             return failure("INVALID_ARGUMENT", error.message, "validate", False, name)
-        logger.info("Tool call: %s(%s)", name, arguments)
+        if module is self.caa_tools:
+            logger.info("Tool call: %s; argument fields: %s", name, sorted(arguments))
+        else:
+            logger.info("Tool call: %s(%s)", name, arguments)
         stage = "connect"
         try:
-            if name not in {"catia_connect", "catia_disconnect"}:
+            if module is not self.caa_tools and name not in {"catia_connect", "catia_disconnect"}:
                 self.connection.ensure_connected()
             stage = "connect" if name == "catia_connect" else "execute"
             result = module.execute(name, arguments)

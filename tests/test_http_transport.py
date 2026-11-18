@@ -97,7 +97,8 @@ def test_authenticated_client_lists_tools_and_gets_structured_errors(monkeypatch
         ):
             await session.initialize()
             tools = await session.list_tools()
-            assert len(tools.tools) == 98
+            assert len(tools.tools) == 99
+            assert any(tool.name == "catia_caa_demo_create_point" for tool in tools.tools)
             result = await session.call_tool("catia_list_documents", {})
             assert result.isError is True
             assert result.structuredContent["code"] == "COM_ERROR"

@@ -59,7 +59,10 @@ All notable changes to this project are documented here.
   `--new-token` generates one), compared in constant time, with DNS-rebinding
   protection on loopback. stdio stays the default and is unchanged. Setup for
   Claude Code, Cursor, VS Code and Claude Desktop in docs/remote-access.md.
-- **Knowledgeware module (98 tools total)**: `catia_create_parameter`
+- Experimental `catia_caa_demo_create_point` (99 tools total): optional B30 CAA
+  adapter with a configured local runtime. The bridge uses an explicit shared
+  job directory, Unicode file APIs and structural JSON parsing.
+- **Knowledgeware module (5 tools)**: `catia_create_parameter`
   (lengths and angles valuated with explicit units), `catia_set_formula`
   (create or modify in place), `catia_list_relations`,
   `catia_delete_relation` and `catia_create_design_table` with column

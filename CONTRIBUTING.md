@@ -51,3 +51,12 @@ version. A minimal reproduction makes fixes much faster.
   profiles) — see #6
 - `catia_delete_feature` and other feature-management tools — see #2
 - More runtime smoke tests against real CATIA instances
+
+## Optional CAA contributions
+
+Contribute a narrow typed adapter, native source and build instructions; exclude
+vendor SDK/files, built DLLs, sample binaries and local licensing configuration.
+Record the exact source commit/dirty state and toolchain of any live evidence.
+A reused DLL validates only matching native sources and the tested adapter path;
+it does not replace a build log from the proposed branch. Keep native failures,
+pending-job recovery and any unvalidated limitations explicit.
