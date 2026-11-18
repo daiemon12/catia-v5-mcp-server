@@ -28,6 +28,17 @@ This MCP server exposes **98 tools** that let an AI agent:
 - **Drafting** — Drawing documents, generative views (axis- or face-driven), projection/section/detail views, 3D-driven dimensions, text and tables (experimental, field-contributed)
 - **Diagnostics** — report the CATIA release and probe which automation APIs the installation exposes
 
+## Kinematics Tools (4)
+
+The kinematics tools create and inspect DMU mechanisms in the active CATIA assembly. They require CATIA V5 with the **DMU Kinematics license** activated.
+
+| Tool | Purpose | Preconditions |
+|---|---|---|
+| `catia_kin_create_revolute_joint` | Create a revolute joint between two components. | Both parts must contain the same standalone wireframe axis line (for example, `KinGeo/Line.1`) in a geometrical set. The line must be normal to the selected origin plane. Sketch-embedded elements are not supported. |
+| `catia_kin_create_prismatic_joint` | Create a prismatic joint between two components. | Both parts must contain the same standalone wireframe translation line in a geometrical set (for example, `KinGeo/Line.1`), with a compatible plane reference. Sketch-embedded elements are not supported. |
+| `catia_kin_get_mechanism_info` | List mechanisms, joints, commands, degrees of freedom, and fixed part. | An assembly document with accessible DMU Kinematics mechanisms. |
+| `catia_kin_drive_mechanism` | Drive an existing mechanism command and return its read-back value. | The mechanism must contain exactly one command; the drive tool does not choose among multiple commands. |
+
 ## Requirements
 
 - **Windows** (COM automation is Windows-only)
@@ -57,7 +68,7 @@ This MCP server exposes **98 tools** that let an AI agent:
 
 `catia_measure_distance` accepts tree names (`Pad.1`, `Sketch.2`) and indexed
 topology (`Face.N` / `Edge.N` from `catia_list_faces` / `catia_list_edges`).
-The topology path follows a V5R20 field diagnosis (selection Reference
+The topology path follows a V5R20 field diagnosis (Selection Reference
 property instead of `CreateReferenceFromObject`, which rejects HSO topology)
 and awaits live confirmation on real CATIA; reports welcome.
 
