@@ -174,8 +174,36 @@ class CATIAConnection:
             )
 
     def get_active_part_body(self) -> Any:
-        """Get the main PartBody from the active Part document."""
+        """Get the active Part Design Body from the active Part document.
+
+        Returns the body that is currently 'in work': the InWorkObject itself when
+        it is a Body, or the body containing the InWorkObject feature. Falls back
+        to the main PartBody when the InWorkObject is a GSD element or unset.
+        """
         part = self.get_active_part()
+        try:
+            in_work = part.InWorkObject
+            if in_work is not None:
+                # If the InWorkObject IS a Body, return it directly.
+                try:
+                    if hasattr(in_work, "Shapes"):
+                        return in_work
+                except Exception:
+                    pass
+                # Otherwise find which body contains the InWorkObject feature.
+                name = in_work.Name
+                bodies = part.Bodies
+                for i in range(1, bodies.Count + 1):
+                    b = bodies.Item(i)
+                    shapes = b.Shapes
+                    for j in range(1, shapes.Count + 1):
+                        try:
+                            if shapes.Item(j).Name == name:
+                                return b
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         return part.MainBody
 
     def get_origin_elements(self) -> dict[str, Any]:
